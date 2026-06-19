@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar, MapPin, ArrowUpRight, PlayCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { resolveAssetUrl } from "@/components/FileUpload";
 
 function getYouTubeId(url = "") {
   const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/))([\w-]{11})/);
@@ -26,7 +27,7 @@ function MediaThumb({ url, onClick }) {
   }
   return (
     <button onClick={onClick} className="group relative aspect-video w-full overflow-hidden rounded-md border bg-secondary">
-      <video src={url} className="h-full w-full object-cover" />
+      <video src={resolveAssetUrl(url)} className="h-full w-full object-cover" />
       <div className="absolute inset-0 flex items-center justify-center bg-black/30">
         <PlayCircle className="h-10 w-10 text-white" />
       </div>
@@ -81,7 +82,7 @@ export default function Events() {
             {getYouTubeId(open.url) ? (
               <iframe className="aspect-video w-full rounded-md" src={`https://www.youtube.com/embed/${getYouTubeId(open.url)}?autoplay=1`} title="video" allow="autoplay; encrypted-media" allowFullScreen />
             ) : (
-              <video src={open.url} controls autoPlay className="aspect-video w-full rounded-md bg-black" />
+              <video src={resolveAssetUrl(open.url)} controls autoPlay className="aspect-video w-full rounded-md bg-black" />
             )}
           </DialogContent>
         </Dialog>
@@ -101,7 +102,7 @@ function EventCard({ ev, onOpenImage, onOpenVideo }) {
     <Card className="overflow-hidden border-border/60 hover:border-primary/40 transition-colors" data-testid={`event-${ev.id}`}>
       {images[0] && (
         <button onClick={() => onOpenImage(0)} className="block aspect-[16/9] w-full overflow-hidden bg-secondary">
-          <img src={images[0]} alt={ev.title} className="h-full w-full object-cover transition-transform duration-500 hover:scale-105" />
+          <img src={resolveAssetUrl(images[0])} alt={ev.title} className="h-full w-full object-cover transition-transform duration-500 hover:scale-105" />
         </button>
       )}
       <CardContent className="p-6">
@@ -144,7 +145,7 @@ function ImageLightbox({ event, index, setIndex, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4" onClick={onClose}>
       <button className="absolute right-4 top-4 rounded-full border bg-background/80 p-2" onClick={onClose} data-testid="lightbox-close"><X className="h-4 w-4" /></button>
       <button className="absolute left-4 rounded-full border bg-background/80 p-2 disabled:opacity-30" disabled={safeIdx === 0} onClick={(e) => { e.stopPropagation(); setIndex(safeIdx - 1); }}><ChevronLeft className="h-5 w-5" /></button>
-      <img src={images[safeIdx]} alt="" className="max-h-[85vh] max-w-[90vw] rounded-md object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <img src={resolveAssetUrl(images[safeIdx])} alt="" className="max-h-[85vh] max-w-[90vw] rounded-md object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
       <button className="absolute right-4 rounded-full border bg-background/80 p-2 disabled:opacity-30" disabled={safeIdx === images.length - 1} onClick={(e) => { e.stopPropagation(); setIndex(safeIdx + 1); }}><ChevronRight className="h-5 w-5" /></button>
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border bg-background/80 px-3 py-1 text-xs">{safeIdx + 1} / {images.length}</div>
     </div>

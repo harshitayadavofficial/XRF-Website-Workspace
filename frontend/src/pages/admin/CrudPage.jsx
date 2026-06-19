@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import FileUpload from "@/components/FileUpload";
 
 /**
  * Generic CRUD page used by lightweight CMS modules.
@@ -143,6 +144,26 @@ function EditDialog({ item, fields, resource, onClose, onSaved, testidPrefix }) 
                 />
               ) : f.type === "switch" ? (
                 <div className="mt-1.5"><Switch checked={!!form[f.key]} onCheckedChange={(v) => setForm({ ...form, [f.key]: v })} data-testid={`${testidPrefix}-field-${f.key}`} /></div>
+              ) : f.type === "upload" ? (
+                <div className="mt-1.5">
+                  <FileUpload
+                    value={form[f.key] || ""}
+                    onChange={(v) => setForm({ ...form, [f.key]: v })}
+                    mode="single"
+                    accept={f.accept || "image"}
+                    testid={`${testidPrefix}-field-${f.key}`}
+                  />
+                </div>
+              ) : f.type === "upload_multi" ? (
+                <div className="mt-1.5">
+                  <FileUpload
+                    value={Array.isArray(form[f.key]) ? form[f.key] : []}
+                    onChange={(v) => setForm({ ...form, [f.key]: v })}
+                    mode="multiple"
+                    accept={f.accept || "image"}
+                    testid={`${testidPrefix}-field-${f.key}`}
+                  />
+                </div>
               ) : f.type === "list" ? (
                 <Textarea
                   rows={f.rows || 4}

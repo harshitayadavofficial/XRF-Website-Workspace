@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import FileUpload from "@/components/FileUpload";
 
 const EMPTY = {
   name: "", slug: "", category: "", tagline: "", summary: "", image: "",
@@ -126,8 +127,18 @@ function ProductEditDialog({ item, cats, onClose, onSaved }) {
             </Select>
           </div>
           <TextField label="Tagline" value={form.tagline} onChange={(v) => setF("tagline", v)} testid="pe-tagline" />
-          <TextField label="Image URL" value={form.image} onChange={(v) => setF("image", v)} testid="pe-image" />
-          <TextField label="3D Model URL (.glb/.gltf)" value={form.model_3d} onChange={(v) => setF("model_3d", v)} testid="pe-3d" />
+          <div className="sm:col-span-2">
+            <Label className="text-xs uppercase tracking-widest">Product Image</Label>
+            <div className="mt-1.5">
+              <FileUpload value={form.image || ""} onChange={(v) => setF("image", v)} mode="single" accept="image" testid="pe-image" />
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <Label className="text-xs uppercase tracking-widest">3D Model (.glb / .gltf) — optional</Label>
+            <div className="mt-1.5">
+              <FileUpload value={form.model_3d || ""} onChange={(v) => setF("model_3d", v)} mode="single" accept="model" testid="pe-3d" />
+            </div>
+          </div>
           <div className="sm:col-span-2">
             <Label className="text-xs uppercase tracking-widest">Summary</Label>
             <Textarea className="mt-1.5" value={form.summary} onChange={(e) => setF("summary", e.target.value)} data-testid="pe-summary" />

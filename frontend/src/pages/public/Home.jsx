@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import ThreeViewer from "@/components/ThreeViewer";
 import AnnouncementBar from "@/components/AnnouncementBar";
+import { resolveAssetUrl } from "@/components/FileUpload";
 import { usePublicSettings } from "@/context/SettingsContext";
 import {
   Award, Globe2, ShieldCheck, Sparkles, Zap, Layers, Flame, Code,
@@ -183,7 +184,7 @@ export default function Home() {
             <Link to={`/products/${p.slug}`} key={p.id} className="group" data-testid={`featured-${p.slug}`}>
               <Card className="h-full overflow-hidden border-border/60 transition-all hover:border-primary/50 hover:-translate-y-1">
                 <div className="aspect-[4/3] overflow-hidden bg-secondary">
-                  <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <img src={resolveAssetUrl(p.image)} alt={p.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                 </div>
                 <CardContent className="p-5">
                   <div className="text-[10px] uppercase tracking-widest text-primary">{p.category?.replace(/-/g, " ")}</div>
@@ -220,7 +221,7 @@ export default function Home() {
         <div className="grid gap-5 lg:grid-cols-3">
           {[...caseStudies.slice(0, 1), ...blogs.slice(0, 2)].map((b, i) => (
             <Card key={i} className="overflow-hidden border-border/60" data-testid={`resource-${i}`}>
-              {b.image && <div className="aspect-video bg-secondary"><img src={b.image} alt="" className="h-full w-full object-cover" /></div>}
+              {b.image && <div className="aspect-video bg-secondary"><img src={resolveAssetUrl(b.image)} alt="" className="h-full w-full object-cover" /></div>}
               <CardContent className="p-5">
                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{b.industry || b.category || "Article"}</div>
                 <div className="mt-1 text-base font-medium leading-tight">{b.title}</div>

@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Newspaper, FileText, Download } from "lucide-react";
+import { resolveAssetUrl } from "@/components/FileUpload";
 
 export default function Resources() {
   const [blogs, setBlogs] = useState([]);
@@ -59,7 +60,7 @@ export default function Resources() {
 function ContentCard({ title, excerpt, image, category }) {
   return (
     <Card className="overflow-hidden border-border/60">
-      {image && <div className="aspect-video bg-secondary"><img src={image} alt="" className="h-full w-full object-cover" /></div>}
+      {image && <div className="aspect-video bg-secondary"><img src={resolveAssetUrl(image)} alt="" className="h-full w-full object-cover" /></div>}
       <CardContent className="p-5">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{category}</div>
         <div className="mt-1 text-base font-medium">{title}</div>

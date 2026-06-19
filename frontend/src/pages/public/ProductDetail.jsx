@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ThreeViewer from "@/components/ThreeViewer";
+import { resolveAssetUrl } from "@/components/FileUpload";
 import { ArrowRight, Check, Download, MessageCircleMore } from "lucide-react";
 import InquiryForm from "@/pages/public/InquiryForm";
 
@@ -29,10 +30,10 @@ export default function ProductDetail() {
       <section className="border-b">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 lg:grid-cols-2 lg:gap-16 lg:px-8 lg:py-16">
           <div>
-            <ThreeViewer src={p.model_3d} height={480} />
+            <ThreeViewer src={resolveAssetUrl(p.model_3d)} height={480} />
             {p.image && (
               <div className="mt-3 grid grid-cols-3 gap-2">
-                <div className="aspect-square overflow-hidden rounded-md border bg-secondary"><img src={p.image} alt="" className="h-full w-full object-cover" /></div>
+                <div className="aspect-square overflow-hidden rounded-md border bg-secondary"><img src={resolveAssetUrl(p.image)} alt="" className="h-full w-full object-cover" /></div>
               </div>
             )}
           </div>
@@ -106,7 +107,7 @@ export default function ProductDetail() {
               {related.map((r) => (
                 <Link to={`/products/${r.slug}`} key={r.id} className="group">
                   <Card className="overflow-hidden border-border/60 hover:border-primary/50 transition-all">
-                    <div className="aspect-[4/3] bg-secondary"><img src={r.image} alt="" className="h-full w-full object-cover" /></div>
+                    <div className="aspect-[4/3] bg-secondary"><img src={resolveAssetUrl(r.image)} alt="" className="h-full w-full object-cover" /></div>
                     <CardContent className="p-5">
                       <div className="text-lg font-medium">{r.name}</div>
                       <div className="mt-1 text-sm text-muted-foreground">{r.tagline}</div>

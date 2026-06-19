@@ -89,7 +89,7 @@ function App() {
                   { key: "name", label: "Name *", type: "text" },
                   { key: "slug", label: "Slug *", type: "text" },
                   { key: "challenge", label: "Industry Challenges", type: "textarea" },
-                  { key: "image", label: "Image URL", type: "url" },
+                  { key: "image", label: "Image", type: "upload", accept: "image" },
                 ]}
                 displayCols={["name", "slug", "created_at"]}
               />
@@ -114,7 +114,7 @@ function App() {
                   { key: "category", label: "Category", type: "text" },
                   { key: "excerpt", label: "Excerpt", type: "textarea" },
                   { key: "content", label: "Content", type: "textarea" },
-                  { key: "image", label: "Cover Image URL", type: "url" },
+                  { key: "image", label: "Cover Image", type: "upload", accept: "image" },
                   { key: "published", label: "Published", type: "switch" },
                 ]}
                 displayCols={["title", "category", "created_at"]}
@@ -142,7 +142,7 @@ function App() {
                   { key: "title", label: "Designation", type: "text" },
                   { key: "quote", label: "Quote *", type: "textarea" },
                   { key: "rating", label: "Rating (1-5)", type: "text" },
-                  { key: "image", label: "Photo URL", type: "url" },
+                  { key: "image", label: "Photo", type: "upload", accept: "image" },
                 ]}
                 displayCols={["name", "title", "created_at"]}
               />
@@ -157,9 +157,9 @@ function App() {
                   { key: "date", label: "Date (YYYY-MM-DD)", type: "text" },
                   { key: "end_date", label: "End Date (YYYY-MM-DD, optional)", type: "text" },
                   { key: "description", label: "Description", type: "textarea" },
-                  { key: "image", label: "Cover Image URL", type: "url" },
-                  { key: "images", label: "Gallery Images (one URL per line)", type: "list", rows: 4 },
-                  { key: "videos", label: "Videos (one YouTube/MP4 URL per line)", type: "list", rows: 3 },
+                  { key: "image", label: "Cover Image", type: "upload", accept: "image" },
+                  { key: "images", label: "Gallery Images", type: "upload_multi", accept: "image" },
+                  { key: "videos", label: "Videos (upload or paste YouTube URL)", type: "upload_multi", accept: "video" },
                   { key: "register_url", label: "Register / Details URL", type: "url" },
                   { key: "published", label: "Published", type: "switch" },
                 ]}

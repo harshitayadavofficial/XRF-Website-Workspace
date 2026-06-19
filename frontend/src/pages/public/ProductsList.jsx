@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { resolveAssetUrl } from "@/components/FileUpload";
 import { ArrowRight, Search } from "lucide-react";
 
 export default function ProductsList() {
@@ -54,7 +55,7 @@ export default function ProductsList() {
             <Link to={`/products/${p.slug}`} key={p.id} className="group" data-testid={`pcard-${p.slug}`}>
               <Card className="h-full overflow-hidden border-border/60 transition-all hover:border-primary/50 hover:-translate-y-1">
                 <div className="aspect-[4/3] overflow-hidden bg-secondary">
-                  <img src={p.image} alt={p.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <img src={resolveAssetUrl(p.image)} alt={p.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                 </div>
                 <CardContent className="p-5">
                   <div className="text-[10px] uppercase tracking-widest text-primary">{p.category?.replace(/-/g, " ")}</div>

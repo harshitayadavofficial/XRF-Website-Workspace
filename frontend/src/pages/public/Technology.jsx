@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
+import { resolveAssetUrl } from "@/components/FileUpload";
 
 const SECTIONS = [
   { title: "X-Ray Fluorescence (XRF)", body: "XRF uses primary X-rays to excite atoms within a sample. As atoms relax, they emit characteristic secondary X-rays whose energies identify each element and intensities reveal concentration — all without damaging the sample." },
@@ -36,7 +37,7 @@ export default function Technology() {
             <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {blogs.map((b) => (
                 <Card key={b.id} className="overflow-hidden border-border/60">
-                  {b.image && <div className="aspect-video bg-secondary"><img src={b.image} alt="" className="h-full w-full object-cover" /></div>}
+                  {b.image && <div className="aspect-video bg-secondary"><img src={resolveAssetUrl(b.image)} alt="" className="h-full w-full object-cover" /></div>}
                   <CardContent className="p-5">
                     <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{b.category}</div>
                     <div className="mt-1 text-base font-medium">{b.title}</div>

@@ -13,8 +13,9 @@ from typing import List, Optional, Annotated, Any
 
 import bcrypt
 import jwt
+import requests
 from bson import ObjectId
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status, UploadFile, File
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, ConfigDict, BeforeValidator, EmailStr, field_validator
@@ -28,6 +29,76 @@ db = client[os.environ['DB_NAME']]
 # ---------- App ----------
 app = FastAPI(title="AurumTech Instruments API")
 api = APIRouter(prefix="/api")
+
+# ---------- Object Storage (Emergent) ----------
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+APP_NAME = "aurumtech"
+_storage_key: Optional[str] = None
+
+MIME_BY_EXT = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif",
+    "webp": "image/webp", "svg": "image/svg+xml",
+    "mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm", "m4v": "video/x-m4v",
+    "pdf": "application/pdf",
+    "glb": "model/gltf-binary", "gltf": "model/gltf+json",
+}
+
+ALLOWED_IMAGE = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"}
+ALLOWED_VIDEO = {"video/mp4", "video/quicktime", "video/webm", "video/x-m4v"}
+ALLOWED_DOC = {"application/pdf", "model/gltf-binary", "model/gltf+json"}
+ALLOWED_UPLOAD = ALLOWED_IMAGE | ALLOWED_VIDEO | ALLOWED_DOC
+
+MAX_IMAGE_SIZE = 10 * 1024 * 1024     # 10 MB
+MAX_VIDEO_SIZE = 100 * 1024 * 1024    # 100 MB
+MAX_DOC_SIZE = 25 * 1024 * 1024       # 25 MB
+
+
+def _init_storage():
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    if not EMERGENT_KEY:
+        raise RuntimeError("EMERGENT_LLM_KEY missing — uploads disabled")
+    r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    r.raise_for_status()
+    _storage_key = r.json()["storage_key"]
+    return _storage_key
+
+
+def _put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = _init_storage()
+    r = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=180,
+    )
+    if r.status_code == 403:
+        global _storage_key
+        _storage_key = None
+        key = _init_storage()
+        r = requests.put(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key, "Content-Type": content_type},
+            data=data, timeout=180,
+        )
+    r.raise_for_status()
+    return r.json()
+
+
+def _get_object(path: str):
+    key = _init_storage()
+    r = requests.get(f"{STORAGE_URL}/objects/{path}",
+                     headers={"X-Storage-Key": key}, timeout=120)
+    if r.status_code == 403:
+        global _storage_key
+        _storage_key = None
+        key = _init_storage()
+        r = requests.get(f"{STORAGE_URL}/objects/{path}",
+                         headers={"X-Storage-Key": key}, timeout=120)
+    r.raise_for_status()
+    return r.content, r.headers.get("Content-Type", "application/octet-stream")
+
 
 # ---------- Auth helpers ----------
 JWT_ALGORITHM = "HS256"
@@ -721,6 +792,93 @@ async def dashboard_stats(user: dict = Depends(require_staff)):
     }
 
 
+# ---------- Uploads ----------
+@api.post("/uploads")
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    request: Request = None,
+    user: dict = Depends(require_staff),
+):
+    """Multi-file upload. Returns [{url, original_name, content_type, size, kind}] for each file."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files received")
+    results = []
+    for f in files:
+        ext = (f.filename or "").rsplit(".", 1)[-1].lower() if "." in (f.filename or "") else "bin"
+        content_type = f.content_type or MIME_BY_EXT.get(ext, "application/octet-stream")
+        if content_type not in ALLOWED_UPLOAD:
+            raise HTTPException(status_code=400, detail=f"File type not allowed: {content_type}")
+
+        data = await f.read()
+        size = len(data)
+
+        if content_type in ALLOWED_IMAGE and size > MAX_IMAGE_SIZE:
+            raise HTTPException(status_code=413, detail=f"Image '{f.filename}' exceeds 10MB")
+        if content_type in ALLOWED_VIDEO and size > MAX_VIDEO_SIZE:
+            raise HTTPException(status_code=413, detail=f"Video '{f.filename}' exceeds 100MB")
+        if content_type in ALLOWED_DOC and size > MAX_DOC_SIZE:
+            raise HTTPException(status_code=413, detail=f"File '{f.filename}' exceeds 25MB")
+
+        kind = "image" if content_type in ALLOWED_IMAGE else ("video" if content_type in ALLOWED_VIDEO else "file")
+        path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
+        try:
+            stored = _put_object(path, data, content_type)
+        except Exception as e:
+            logger.error(f"Storage upload failed: {e}")
+            raise HTTPException(status_code=502, detail="Upload failed — storage unavailable")
+
+        stored_path = stored.get("path") or path
+        await db.files.insert_one({
+            "storage_path": stored_path,
+            "original_filename": f.filename,
+            "content_type": content_type,
+            "size": size,
+            "kind": kind,
+            "uploaded_by": user["id"],
+            "is_deleted": False,
+            "created_at": now_iso(),
+        })
+        await audit(user, "upload", "files", stored_path, {"name": f.filename, "size": size}, request)
+
+        results.append({
+            "url": f"/api/files/{stored_path}",
+            "original_name": f.filename,
+            "content_type": content_type,
+            "size": size,
+            "kind": kind,
+            "path": stored_path,
+        })
+    return results
+
+
+@api.get("/files/{path:path}")
+async def serve_file(path: str):
+    """Public file serve. Marketing assets are intentionally public — security through UUID-based paths."""
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False})
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        data, ctype = _get_object(path)
+    except Exception as e:
+        logger.error(f"Storage download failed: {e}")
+        raise HTTPException(status_code=502, detail="File temporarily unavailable")
+    headers = {
+        "Cache-Control": "public, max-age=2592000, immutable",  # 30 days
+        "Content-Disposition": f'inline; filename="{record.get("original_filename", "file")}"',
+    }
+    return Response(content=data, media_type=record.get("content_type") or ctype, headers=headers)
+
+
+@api.delete("/uploads/{path:path}")
+async def soft_delete_file(path: str, request: Request, user: dict = Depends(require_staff)):
+    r = await db.files.update_one({"storage_path": path}, {"$set": {"is_deleted": True, "deleted_at": now_iso()}})
+    if not r.matched_count:
+        raise HTTPException(status_code=404, detail="Not found")
+    await audit(user, "delete", "files", path, None, request)
+    return {"ok": True}
+
+
+
 @api.get("/")
 async def root():
     return {"service": "AurumTech API", "status": "ok"}
@@ -903,6 +1061,11 @@ logger = logging.getLogger("aurumtech")
 async def _startup():
     await ensure_indexes()
     await seed_admin()
+    try:
+        _init_storage()
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.warning(f"Object storage init deferred: {e}")
     logger.info("AurumTech API ready")
 
 @app.on_event("shutdown")
