@@ -143,6 +143,15 @@ function EditDialog({ item, fields, resource, onClose, onSaved, testidPrefix }) 
                 />
               ) : f.type === "switch" ? (
                 <div className="mt-1.5"><Switch checked={!!form[f.key]} onCheckedChange={(v) => setForm({ ...form, [f.key]: v })} data-testid={`${testidPrefix}-field-${f.key}`} /></div>
+              ) : f.type === "list" ? (
+                <Textarea
+                  rows={f.rows || 4}
+                  value={Array.isArray(form[f.key]) ? form[f.key].join("\n") : (form[f.key] || "")}
+                  onChange={(e) => setForm({ ...form, [f.key]: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })}
+                  className="mt-1.5 font-mono text-xs"
+                  placeholder={f.placeholder || "Paste one URL per line"}
+                  data-testid={`${testidPrefix}-field-${f.key}`}
+                />
               ) : (
                 <Input
                   value={form[f.key] || ""}

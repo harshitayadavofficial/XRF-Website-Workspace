@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { ScanLine, Menu, X, Phone, MessageCircleMore, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ThemeToggle from "@/components/ThemeToggle";
+import AnnouncementBar from "@/components/AnnouncementBar";
+import { usePublicSettings } from "@/context/SettingsContext";
 
 const NAV = [
   { to: "/", label: "Home", end: true },
@@ -10,6 +12,7 @@ const NAV = [
   { to: "/industries", label: "Industries" },
   { to: "/technology", label: "Technology" },
   { to: "/services", label: "Services" },
+  { to: "/events", label: "Events" },
   { to: "/resources", label: "Resources" },
   { to: "/contact", label: "Contact" },
 ];
@@ -17,11 +20,13 @@ const NAV = [
 export default function PublicLayout() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const { settings } = usePublicSettings();
 
   useEffect(() => { setOpen(false); window.scrollTo({ top: 0 }); }, [pathname]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <AnnouncementBar config={settings?.announcements?.top} variant="top" testid="top-announcement" />
       <Header open={open} setOpen={setOpen} />
       <main className="min-h-[calc(100vh-4rem)]"><Outlet /></main>
       <Footer />
@@ -104,6 +109,7 @@ function Footer() {
         ]} />
         <FooterCol title="Engage" links={[
           ["Request Demo", "/request-demo"], ["Request Quote", "/request-quote"],
+          ["Events", "/events"],
           ["Become a Dealer", "/dealers"], ["Support Ticket", "/support"],
           ["Admin", "/admin/login"],
         ]} />

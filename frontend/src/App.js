@@ -2,6 +2,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { SettingsProvider } from "@/context/SettingsContext";
 import { Toaster } from "@/components/ui/sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
@@ -13,6 +14,7 @@ import Industries from "@/pages/public/Industries";
 import Technology from "@/pages/public/Technology";
 import Services from "@/pages/public/Services";
 import Resources from "@/pages/public/Resources";
+import EventsPublic from "@/pages/public/Events";
 import Contact from "@/pages/public/Contact";
 import RequestDemo from "@/pages/public/RequestDemo";
 import RequestQuote from "@/pages/public/RequestQuote";
@@ -33,6 +35,7 @@ function App() {
     <ThemeProvider defaultTheme="dark">
       <BrowserRouter>
         <AuthProvider>
+          <SettingsProvider>
           <Routes>
             {/* Public */}
             <Route element={<PublicLayout />}>
@@ -43,6 +46,7 @@ function App() {
               <Route path="/technology" element={<Technology />} />
               <Route path="/services" element={<Services />} />
               <Route path="/resources" element={<Resources />} />
+              <Route path="/events" element={<EventsPublic />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/request-demo" element={<RequestDemo />} />
               <Route path="/request-quote" element={<RequestQuote />} />
@@ -148,11 +152,16 @@ function App() {
               <CrudPage title="Events" resource="events" testidPrefix="events"
                 fields={[
                   { key: "title", label: "Title *", type: "text" },
-                  { key: "type", label: "Type (Exhibition / Webinar)", type: "text" },
+                  { key: "type", label: "Type (Exhibition / Webinar / Trade Show / Launch)", type: "text" },
                   { key: "location", label: "Location", type: "text" },
                   { key: "date", label: "Date (YYYY-MM-DD)", type: "text" },
+                  { key: "end_date", label: "End Date (YYYY-MM-DD, optional)", type: "text" },
                   { key: "description", label: "Description", type: "textarea" },
-                  { key: "image", label: "Image URL", type: "url" },
+                  { key: "image", label: "Cover Image URL", type: "url" },
+                  { key: "images", label: "Gallery Images (one URL per line)", type: "list", rows: 4 },
+                  { key: "videos", label: "Videos (one YouTube/MP4 URL per line)", type: "list", rows: 3 },
+                  { key: "register_url", label: "Register / Details URL", type: "url" },
+                  { key: "published", label: "Published", type: "switch" },
                 ]}
                 displayCols={["title", "date", "location"]}
               />
@@ -179,6 +188,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster richColors closeButton position="top-right" />
+          </SettingsProvider>
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>

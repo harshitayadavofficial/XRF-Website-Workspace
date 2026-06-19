@@ -22,6 +22,20 @@ export default function Settings() {
       whatsapp_cfg: { number: "+919999999999", default_msg: "Hi, I'd like to know more about AurumTech products.", enabled: true, ...(data.whatsapp_cfg || {}) },
       seo: { title: "AurumTech Instruments — XRF Analyzers, Gold Testing, Hallmarking", description: "Premium XRF analyzers, gold testing machines, hallmarking and laser marking equipment.", keywords: "XRF, gold testing, hallmarking, BIS, refinery", og_image: "", ...(data.seo || {}) },
       integrations: { ga4: "", gtm: "", clarity: "", calendly: "", ...(data.integrations || {}) },
+      announcements: {
+        top: {
+          enabled: false,
+          interval: 6,
+          items: [],
+          ...(data.announcements?.top || {}),
+        },
+        home: {
+          enabled: false,
+          interval: 6,
+          items: [],
+          ...(data.announcements?.home || {}),
+        },
+      },
     });
   };
   useEffect(() => { load(); }, []);
@@ -53,6 +67,7 @@ export default function Settings() {
       <Tabs defaultValue="company">
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="company" data-testid="tab-company">Company</TabsTrigger>
+          <TabsTrigger value="announcements" data-testid="tab-announcements">Announcements</TabsTrigger>
           <TabsTrigger value="social" data-testid="tab-social">Social</TabsTrigger>
           <TabsTrigger value="email" data-testid="tab-email">Email</TabsTrigger>
           <TabsTrigger value="whatsapp" data-testid="tab-whatsapp">WhatsApp</TabsTrigger>
@@ -70,6 +85,10 @@ export default function Settings() {
             <F label="Website" v={s.company.website} on={(v) => setSec("company", { website: v })} testid="set-website" />
             <div className="sm:col-span-2"><Label className="text-xs uppercase tracking-widest">Address</Label><Textarea className="mt-1.5" value={s.company.address || ""} onChange={(e) => setSec("company", { address: e.target.value })} /></div>
           </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="announcements">
+          <AnnouncementEditor s={s} setSec={setSec} />
         </TabsContent>
 
         <TabsContent value="social">
@@ -145,5 +164,106 @@ function F({ label, v, on, testid, type = "text" }) {
       <Label className="text-xs uppercase tracking-widest">{label}</Label>
       <Input type={type} className="mt-1.5" value={v ?? ""} onChange={(e) => on(e.target.value)} data-testid={testid} />
     </div>
+  );
+}
+
+
+function AnnouncementEditor({ s, setSec }) {
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <AnnouncementBlock
+        title="Top Bar (above header)"
+        eyebrow="Slim banner shown on every public page"
+        cfg={s.announcements.top}
+        onChange={(v) => setSec("announcements", { ...s.announcements, top: v })}
+        testIdPrefix="ann-top"
+      />
+      <AnnouncementBlock
+        title="Home Strip (before Product Categories)"
+        eyebrow="Card-style strip shown only on the home page"
+        cfg={s.announcements.home}
+        onChange={(v) => setSec("announcements", { ...s.announcements, home: v })}
+        testIdPrefix="ann-home"
+      />
+    </div>
+  );
+}
+
+function AnnouncementBlock({ title, eyebrow, cfg, onChange, testIdPrefix }) {
+  const items = Array.isArray(cfg.items) ? cfg.items : [];
+  const setItems = (next) => onChange({ ...cfg, items: next });
+  const updateItem = (i, patch) => setItems(items.map((it, idx) => idx === i ? { ...(typeof it === "string" ? { text: it } : it), ...patch } : it));
+  const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+  const addItem = () => setItems([...items, { text: "New announcement", badge: "", link: "", link_label: "" }]);
+
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="mb-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</div>
+          <h3 className="text-base font-medium">{title}</h3>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4 rounded-md border bg-secondary/30 p-3">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={!!cfg.enabled}
+              onCheckedChange={(v) => onChange({ ...cfg, enabled: v })}
+              data-testid={`${testIdPrefix}-enabled`}
+            />
+            <span className="text-sm">Show on website</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs uppercase tracking-widest">Slide interval (sec)</Label>
+            <Input
+              type="number"
+              min={2}
+              max={60}
+              className="h-8 w-20"
+              value={cfg.interval ?? 6}
+              onChange={(e) => onChange({ ...cfg, interval: Math.max(2, Number(e.target.value) || 6) })}
+              data-testid={`${testIdPrefix}-interval`}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {items.length === 0 && (
+            <div className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
+              No announcements yet. Add one below.
+            </div>
+          )}
+          {items.map((raw, i) => {
+            const it = typeof raw === "string" ? { text: raw } : (raw || {});
+            return (
+              <div key={i} className="rounded-md border bg-card p-3" data-testid={`${testIdPrefix}-item-${i}`}>
+                <div className="grid gap-2 sm:grid-cols-12">
+                  <div className="sm:col-span-2">
+                    <Label className="text-[10px] uppercase tracking-widest">Badge (optional)</Label>
+                    <Input value={it.badge || ""} onChange={(e) => updateItem(i, { badge: e.target.value })} className="mt-1 h-9" placeholder="NEW" data-testid={`${testIdPrefix}-badge-${i}`} />
+                  </div>
+                  <div className="sm:col-span-6">
+                    <Label className="text-[10px] uppercase tracking-widest">Text *</Label>
+                    <Input value={it.text || ""} onChange={(e) => updateItem(i, { text: e.target.value })} className="mt-1 h-9" placeholder="🎉 Meet us at IIJS 2026, Booth #B-204" data-testid={`${testIdPrefix}-text-${i}`} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-[10px] uppercase tracking-widest">Link Label</Label>
+                    <Input value={it.link_label || ""} onChange={(e) => updateItem(i, { link_label: e.target.value })} className="mt-1 h-9" placeholder="Register" data-testid={`${testIdPrefix}-linklabel-${i}`} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-[10px] uppercase tracking-widest">Link URL</Label>
+                    <Input value={it.link || ""} onChange={(e) => updateItem(i, { link: e.target.value })} className="mt-1 h-9" placeholder="/events" data-testid={`${testIdPrefix}-link-${i}`} />
+                  </div>
+                </div>
+                <div className="mt-2 flex justify-end">
+                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => removeItem(i)} data-testid={`${testIdPrefix}-remove-${i}`}>Remove</Button>
+                </div>
+              </div>
+            );
+          })}
+          <Button variant="outline" size="sm" onClick={addItem} className="rounded-sm" data-testid={`${testIdPrefix}-add`}>+ Add announcement</Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

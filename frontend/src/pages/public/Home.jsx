@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import ThreeViewer from "@/components/ThreeViewer";
+import AnnouncementBar from "@/components/AnnouncementBar";
+import { usePublicSettings } from "@/context/SettingsContext";
 import {
   Award, Globe2, ShieldCheck, Sparkles, Zap, Layers, Flame, Code,
   ScanLine, BadgeCheck, ArrowRight, ArrowUpRight, Quote,
@@ -39,6 +41,7 @@ export default function Home() {
   const [testimonials, setTestimonials] = useState([]);
   const [caseStudies, setCaseStudies] = useState([]);
   const [blogs, setBlogs] = useState([]);
+  const { settings } = usePublicSettings();
 
   useEffect(() => {
     Promise.all([
@@ -125,6 +128,7 @@ export default function Home() {
       </section>
 
       {/* Categories */}
+      <AnnouncementBar config={settings?.announcements?.home} variant="section" testid="home-announcement" />
       <Section eyebrow="Catalog" title="Product Categories" sub="A complete portfolio for the precious metals workflow.">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {cats.map((c) => {
