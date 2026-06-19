@@ -17,7 +17,7 @@ from bson import ObjectId
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, ConfigDict, BeforeValidator, EmailStr
+from pydantic import BaseModel, Field, ConfigDict, BeforeValidator, EmailStr, field_validator
 
 
 # ---------- DB ----------
@@ -107,6 +107,11 @@ class GenericIn(BaseModel):
 LEAD_STATUSES = ["new", "contacted", "qualified", "proposal_sent", "negotiation", "won", "lost"]
 LEAD_SOURCES = ["contact", "demo_request", "quote_request", "product_inquiry", "dealer_inquiry", "support"]
 
+def _blank_to_none(v):
+    if isinstance(v, str) and v.strip() == "":
+        return None
+    return v
+
 class LeadCreateIn(BaseModel):
     name: str
     email: Optional[EmailStr] = None
@@ -117,6 +122,10 @@ class LeadCreateIn(BaseModel):
     product_interest: Optional[str] = None
     message: Optional[str] = None
     source: str = "contact"
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _e(cls, v): return _blank_to_none(v)
 
 class LeadUpdateIn(BaseModel):
     name: Optional[str] = None
@@ -145,6 +154,10 @@ class DemoRequestIn(BaseModel):
     preferred_date: Optional[str] = None
     message: Optional[str] = None
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _e(cls, v): return _blank_to_none(v)
+
 class QuoteRequestIn(BaseModel):
     name: str
     email: Optional[EmailStr] = None
@@ -154,6 +167,10 @@ class QuoteRequestIn(BaseModel):
     quantity: Optional[int] = 1
     message: Optional[str] = None
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _e(cls, v): return _blank_to_none(v)
+
 class TicketIn(BaseModel):
     subject: str
     description: str
@@ -162,6 +179,10 @@ class TicketIn(BaseModel):
     company: Optional[str] = None
     product: Optional[str] = None
     priority: Optional[str] = "medium"
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _e(cls, v): return _blank_to_none(v)
 
 
 # ---------- RBAC ----------
@@ -260,8 +281,8 @@ async def audit(user: dict, action: str, module: str, entity_id: str = "", detai
 @api.post("/auth/login")
 async def login(payload: LoginIn, response: Response, request: Request):
     email = payload.email.lower().strip()
-    ip = request.client.host if request.client else "unknown"
-    identifier = f"{ip}:{email}"
+    # Use email-only identifier so K8s ingress IP rotation doesn't bypass lockout.
+    identifier = f"email:{email}"
 
     # brute force check
     record = await db.login_attempts.find_one({"identifier": identifier})

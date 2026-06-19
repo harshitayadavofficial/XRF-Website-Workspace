@@ -23,7 +23,8 @@ export default function InquiryForm({ productInterest = "", source = "contact", 
       setDone(true);
       toast.success("Your inquiry has been received");
     } catch (err) {
-      toast.error("Failed to submit. Please try again.");
+      const msg = err.response?.data?.detail;
+      toast.error(typeof msg === "string" ? msg : "Failed to submit. Please try again.");
     } finally {
       setLoading(false);
     }

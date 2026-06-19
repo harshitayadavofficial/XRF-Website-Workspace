@@ -9,8 +9,9 @@ export function AuthProvider({ children }) {
 
   const fetchMe = useCallback(async () => {
     try {
-      const { data } = await api.get("/auth/me");
-      setUser(data);
+      const res = await api.get("/auth/me", { validateStatus: (s) => s < 500 });
+      if (res.status === 200) setUser(res.data);
+      else setUser(false);
     } catch {
       setUser(false);
     }
