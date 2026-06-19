@@ -1,0 +1,143 @@
+{
+  "theme_archetype": {
+    "primary_website": "Archetype 5 (Luxury) - Premium Industrial Tech",
+    "primary_admin": "Archetype 4 (Swiss & High-Contrast) - B2B Enterprise",
+    "mode": "dark-first",
+    "description": "High-end engineering meets modern WebGL tech. Matte dark surfaces, sharp glowing gold accents, high legibility. Dark mode is default to emphasize 'premium gold' precision."
+  },
+  "colors": {
+    "global_rules": "Never use pure black or pure gray. Use tinted neutrals (Zinc). Color is used functionally; UI should be 90% monochrome with primary gold used for key actions and focal points.",
+    "dark": {
+      "background": "#09090B",
+      "surface": "#18181B",
+      "surface_elevated": "#27272A",
+      "border": "rgba(255, 255, 255, 0.08)",
+      "primary": "#D4AF37",
+      "primary_hover": "#E5C158",
+      "primary_glow": "rgba(212, 175, 55, 0.15)",
+      "text_primary": "#FAFAFA",
+      "text_secondary": "#A1A1AA",
+      "success": "#22C55E",
+      "warning": "#F5A623",
+      "danger": "#EF4444",
+      "info": "#3B82F6"
+    },
+    "light": {
+      "background": "#FAFAFA",
+      "surface": "#FFFFFF",
+      "surface_elevated": "#F4F4F5",
+      "border": "rgba(0, 0, 0, 0.08)",
+      "primary": "#B8860B",
+      "primary_hover": "#9A6D00",
+      "primary_glow": "rgba(184, 134, 11, 0.15)",
+      "text_primary": "#09090B",
+      "text_secondary": "#52525B",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "danger": "#DC2626",
+      "info": "#2563EB"
+    }
+  },
+  "typography": {
+    "rules": "Avoid Inter/Roboto for headings. Use fluid typography scales. Headings must have tight letter spacing.",
+    "fonts": {
+      "headings_website": "Cabinet Grotesk, sans-serif",
+      "headings_admin": "Chivo, sans-serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-5xl md:text-6xl tracking-tighter font-medium",
+      "h2": "text-3xl md:text-4xl tracking-tight font-medium",
+      "h3": "text-xl md:text-2xl tracking-tight font-medium",
+      "body_lg": "text-lg leading-relaxed text-secondary",
+      "body": "text-base leading-relaxed text-secondary",
+      "labels": "text-xs uppercase tracking-[0.15em] font-bold text-secondary"
+    }
+  },
+  "spacing_layout": {
+    "website_grid": "Bento Grid (Mode A) - Wide gaps (gap-8 to gap-12). Aggressive asymmetry for feature sections.",
+    "admin_grid": "Control Room Grid (Mode B) - Tight gaps (gap-4 to gap-6). Dense, utilitarian layout.",
+    "spacing_scale": "Use generous padding for website (p-12, p-16). Use compact padding for admin (p-4, p-6).",
+    "surface_styles": {
+      "glass": "backdrop-blur-xl bg-background/70 border border-border/40 shadow-sm (Use for sticky navs and dialogs)",
+      "cards_website": "bg-surface border border-border/50 hover:-translate-y-1 transition-transform duration-300",
+      "cards_admin": "bg-surface border border-border rounded-lg"
+    }
+  },
+  "components": {
+    "libraries": {
+      "animations": "framer-motion",
+      "scrolling": "lenis",
+      "3d": "@react-three/fiber, @react-three/drei",
+      "icons": "lucide-react",
+      "ui": "shadcn/ui"
+    },
+    "public_website": {
+      "hero": "Dark background with 3D product viewer taking center stage. Use Drei's Environment and Float. Gold accent glowing behind the model.",
+      "navigation": "Crystal Glass sticky header. Subtle gold accent on hover.",
+      "feature_bento": "Asymmetric bento grid showcasing XRF scanners and furnaces.",
+      "testimonials": "Editorial ribbon marquee for client logos. Slow drift.",
+      "buttons": "Primary buttons: Gold background, dark text, sharp corners (rounded-sm). Secondary: Transparent with gold border."
+    },
+    "admin_dashboard": {
+      "layout": "Sidebar navigation (collapsible). Topbar with global search and theme toggle.",
+      "cards": "Flat, 1px subtle border, no heavy drop shadows. High data density.",
+      "tables": "Shadcn data tables. Use badges for Lead statuses (New, Contacted, Won).",
+      "charts": "Recharts with custom tooltips matching the dark theme. Use gold for primary metrics.",
+      "crm_kanban": "Horizontal scrollable columns for Lead pipeline. Drag and drop capable.",
+      "forms": "Strictly use Shadcn Form, Input, Select. 2-column layouts for complex settings."
+    }
+  },
+  "motion": {
+    "page_transitions": "Subtle opacity and slight Y-axis transform (0.3s ease-out).",
+    "hover_states": "Buttons and links must explicitly shift text color and background. Cards elevate slightly.",
+    "3d_viewer": "Auto-rotate slowly. Interactive zoom and pan. Use hotspots for feature callouts."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over gold buttons is dark (#09090B). Ensure secondary text in dark mode meets APCA.",
+    "motion": "Respect prefers-reduced-motion for Lenis and Framer Motion.",
+    "testing": "All interactive elements must have data-testid attributes (e.g., data-testid='hero-cta-button')."
+  },
+  "media": {
+    "hero_backgrounds": [
+      {
+        "url": "https://images.pexels.com/photos/13568048/pexels-photo-13568048.jpeg",
+        "description": "Abstract liquid dark gold texture (Use as subtle background for hero or features)"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1741356474357-72188f76e801",
+        "description": "Golden light streaks against black background"
+      }
+    ],
+    "products_equipment": [
+      {
+        "url": "https://images.unsplash.com/photo-1742137587486-fdef8cdd25bd",
+        "description": "Scientific laboratory equipment (Placeholder for testing machines)"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1366942/pexels-photo-1366942.jpeg",
+        "description": "Transparent lab glassware (Placeholder for analysis systems)"
+      }
+    ],
+    "client_logos": [
+      {
+        "url": "https://images.pexels.com/photos/21898300/pexels-photo-21898300.jpeg",
+        "description": "Minimalist logo placeholder 1"
+      },
+      {
+        "url": "https://images.pexels.com/photos/26576975/pexels-photo-26576975.jpeg",
+        "description": "Minimalist logo placeholder 2"
+      }
+    ],
+    "instructions_to_main_agent": [
+      "Prioritize building the Admin CMS + CRM first as requested.",
+      "Set up Tailwind with the custom colors defined above.",
+      "Install required fonts (Cabinet Grotesk, Chivo, IBM Plex Sans) via Google Fonts or Fontsource.",
+      "Build a light/dark theme provider. Default to dark theme.",
+      "Create a placeholder 3D component using @react-three/fiber with a simple geometric shape or basic GLTF loader until a real model is provided.",
+      "Implement the CRM kanban board and Dashboard KPIs using Shadcn components.",
+      "Use 'lucide-react' for all icons."
+    ]
+  }
+}
