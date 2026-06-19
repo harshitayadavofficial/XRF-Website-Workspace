@@ -1,0 +1,87 @@
+{
+  "summary": "Comprehensive backend (pytest, 20 cases) + admin & public UI Playwright testing for AurumTech MVP. 19/20 backend tests passed; 1 environmental brute-force lockout failure (likely K8s ingress IP rotation). Admin flows (login → dashboard → leads kanban + note + product create + settings save + audit + users + theme toggle) all work. Public home/products/detail/demo/quote work. One real backend validation bug found: public lead/inquiry endpoints return 422 when optional email is sent as empty string.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/leads/public (and demo-requests/public, quote-requests/public via shared pattern)",
+        "issue": "Pydantic EmailStr rejects empty string '' with 422 even though field is Optional. Frontend InquiryForm/Demo/Quote/Contact send email:'' when user leaves it blank, causing 422 'value is not a valid email address'.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/login",
+        "issue": "Brute-force lockout did not trigger after 7 wrong attempts from test (codes=[401x7]). Identifier is f'{ip}:{email}' — in K8s ingress, upstream client.host may rotate so the counter never reaches 5. Consider using X-Forwarded-For first hop or only email as the identifier."
+      },
+      {
+        "endpoint": "GET /api/settings (mask test)",
+        "issue": "Get returns masked '********', but there is no way to externally verify that the original secret is preserved (only writer-side); covered indirectly. Recommend an internal admin-side endpoint or test hook."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Admin Dashboard / Recharts",
+        "issue": "Console warning: 'ResponsiveContainer width(-1) height(-1)…' on first render. Charts still render after layout settles but warning indicates missing parent min-h/min-w.",
+        "selector": "[data-testid=dashboard-page]",
+        "priority": "LOW"
+      },
+      {
+        "component": "DialogContent (Lead detail, Product editor)",
+        "issue": "A11y warning: Missing `Description` or `aria-describedby={undefined}` for DialogContent. Add `<DialogDescription>` or `aria-describedby` on each Radix Dialog.",
+        "selector": "[data-testid=lead-detail-dialog]",
+        "priority": "LOW"
+      },
+      {
+        "component": "Public layout (logged-out)",
+        "issue": "AuthContext fires GET /api/auth/me on every page load and gets 401 (expected) but logs as console error. Suggest treating 401 from /me as a silent unauthenticated state.",
+        "selector": "n/a",
+        "priority": "LOW"
+      },
+      {
+        "component": "Image rendering (home)",
+        "issue": "React warning: 'An empty string (\"\") was passed to the src attribute.' Some <img> tag is rendered with empty src; should render null or skip.",
+        "selector": "n/a",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Product Detail → Inquiry submit (no email)",
+        "issue": "Backend returns 422 for empty email; UI shows toast 'Failed to submit. Please try again.' instead of inline field error. Root cause is the backend EmailStr behavior (see backend critical).",
+        "affected_selectors": ["[data-testid=inquiry-form]","[data-testid=inq-submit]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Backend: Coerce empty string '' to None for Optional[EmailStr] in LeadCreateIn / DemoRequestIn / QuoteRequestIn / TicketIn (e.g., add a @field_validator that converts '' → None) OR change schema to `Optional[str]`. This fixes Inquiry/Demo/Quote/Contact submissions when email is blank.",
+    "Backend: Strengthen brute-force lockout — use only normalized email as identifier or honor X-Forwarded-For for proxied envs; current key uses request.client.host which may rotate behind ingress.",
+    "Frontend (low priority): Add DialogDescription to lead detail / product editor dialogs to suppress a11y warning. Guard <img src> against empty strings. Wrap ResponsiveContainer with min-height to silence recharts warning.",
+    "Optional UX: surface backend 422 detail in toast instead of generic 'Failed to submit'."
+  ],
+  "critical_code_review_comments": [
+    "server.py is monolithic (~890 lines). Split into routers (auth, leads, cms, settings, dashboard) and a models module.",
+    "make_cms_routes uses GenericIn(extra='allow') with model_dump(); since extra fields go into __pydantic_extra__ (Pydantic v2), model_dump() may NOT include the extra fields by default. Confirmed working in this test because the create returned id and persisted, but please verify on Pydantic version in use — if any CMS fields look empty in DB, switch to `model_dump(by_alias=True, exclude_unset=False)` or accept raw dict via Body(...).",
+    "JWT cookie set with samesite='none' + secure=True is correct for cross-site preview; ensure same flags on delete_cookie path for clean logout (currently delete_cookie path='/' which is fine).",
+    "Login brute-force counter increments only after looking up `record`; on the success path you do delete the attempts doc — good. However the locked_until logic refers to `record.get('count',0)+1>=5` where `record` was fetched before increment; this is correct but fragile — consider computing post-increment count after $inc using `find_one_and_update(... return_document=AFTER)`.",
+    "Generic CMS routes silently `model_dump()` overwrites updated_at and `_id` is fine but PATCH replaces fields wholesale; for true PATCH semantics use `exclude_unset=True`.",
+    "Lead delete is restricted to super_admin/admin/sales_manager — good RBAC layering.",
+    "ObjectId is stringified everywhere — good (no raw ObjectId leaks)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "95% (19/20)", "frontend": "90% (admin flows + public flows render; one integration bug in InquiryForm when email empty)"},
+  "test_credentials": "admin@aurumtech.com / Admin@123; sales@aurumtech.com / Sales@123; content@aurumtech.com / Content@123 — all working.",
+  "seed_data_creation": "Test artifacts created during run: several TEST_-prefixed leads/products/blogs; auto-cleaned for products/blogs created in tests; some leads remain in DB (no public lead delete endpoint via test). Settings document was modified (email host=smtp.x.com).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/backend_test.py. After empty-email fix, re-run pytest and additionally curl POST /api/leads/public with {name:'x',email:'',source:'product_inquiry'} expecting 200. For brute-force test, use a local backend or stable IP to verify lockout. Settings document holds company.name='AurumTech 2' and email.host='smtp.x.com' from test; main agent may want to reset via PUT /api/settings.",
+  "rca of the issue": "RCA – Inquiry 422: Pydantic v2 EmailStr does not accept '' as 'optional/none'. Repro: curl -X POST /api/leads/public -d '{\"name\":\"x\",\"email\":\"\"}' returns 422. Mitigation: add field_validator on LeadCreateIn/DemoRequestIn/QuoteRequestIn/TicketIn: `@field_validator('email', mode='before') def _empty_to_none(cls,v): return v or None` OR change schema email to Optional[str] with manual regex. RCA – Brute force: K8s ingress likely presents differing client.host across requests; identifier f'{ip}:{email}' partitions counter. Use email-only or X-Forwarded-For first hop."
+}
