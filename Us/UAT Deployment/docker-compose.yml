@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aurumtech_app
+    expose:
+      - "8000"
+    volumes:
+      - uploads_data:/app/backend/uploads
+      - logs_data:/app/backend/logs
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    container_name: aurumtech_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - app
+    restart: always
+
+volumes:
+  uploads_data:
+  logs_data:
+
