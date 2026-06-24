@@ -1,6 +1,7 @@
 import { Suspense, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Environment, Float, useGLTF, Html, Bounds } from "@react-three/drei";
+import { OrbitControls, Environment, Float, useGLTF, Html, Bounds, Center } from "@react-three/drei";
+
 
 function FallbackModel() {
   const ref = useRef();
@@ -39,23 +40,28 @@ function GLBModel({ src }) {
   return <primitive object={scene} />;
 }
 
-export default function ThreeViewer({ src, className = "", autoRotate = true, height = 420 }) {
+export default function ThreeViewer({ src, className = "", autoRotate = true, height = 420, transparent = false }) {
   const isGLB = src && (/\.gl(b|tf)(\?|$)/i.test(src));
+  const containerClass = transparent
+    ? `relative w-full overflow-hidden ${className}`
+    : `relative w-full overflow-hidden rounded-lg border bg-gradient-to-br from-background to-secondary/40 ${className}`;
   return (
-    <div className={`relative w-full overflow-hidden rounded-lg border bg-gradient-to-br from-background to-secondary/40 ${className}`} style={{ height }} data-testid="three-viewer">
+    <div className={containerClass} style={{ height }} data-testid="three-viewer">
       <Canvas shadows camera={{ position: [2.2, 1.4, 2.6], fov: 45 }} dpr={[1, 2]}>
         <ambientLight intensity={0.4} />
         <spotLight position={[5, 8, 5]} angle={0.3} penumbra={1} intensity={1.2} castShadow />
         <pointLight position={[-3, -2, -4]} intensity={0.5} color="#D4AF37" />
         <Suspense fallback={<Html center><span className="text-xs text-muted-foreground">Loading model…</span></Html>}>
-          <Bounds fit clip observe margin={1.3}>
+          <Bounds fit observe margin={1.8}>
             <Float speed={1.2} rotationIntensity={0.2} floatIntensity={0.3}>
-              {isGLB ? <GLBModel src={src} /> : <FallbackModel />}
+              <Center>
+                {isGLB ? <GLBModel src={src} /> : <FallbackModel />}
+              </Center>
             </Float>
           </Bounds>
           <Environment preset="studio" />
         </Suspense>
-        <OrbitControls enablePan={false} enableZoom autoRotate={autoRotate} autoRotateSpeed={0.6} minDistance={2} maxDistance={6} />
+        <OrbitControls enablePan={false} enableZoom autoRotate={autoRotate} autoRotateSpeed={0.6} minDistance={0.5} maxDistance={20} />
       </Canvas>
       {/* HUD */}
       <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-md border bg-background/70 backdrop-blur px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground">

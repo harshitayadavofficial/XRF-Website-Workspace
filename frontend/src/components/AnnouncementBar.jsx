@@ -31,7 +31,7 @@ export default function AnnouncementBar({ config, variant = "top", testid = "ann
   if (variant === "top") {
     return (
       <div
-        className="relative z-50 border-b bg-zinc-950 text-white"
+        className="relative z-50 border-b bg-secondary text-foreground"
         data-testid={testid}
       >
         <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 py-2 lg:px-8">
@@ -62,7 +62,7 @@ export default function AnnouncementBar({ config, variant = "top", testid = "ann
                   key={i}
                   onClick={() => setIdx(i)}
                   aria-label={`Show announcement ${i + 1}`}
-                  className={`h-1 rounded-full transition-all ${i === idx ? "w-4 bg-primary" : "w-1 bg-white/30 hover:bg-white/60"}`}
+                  className={`h-1 rounded-full transition-all ${i === idx ? "w-4 bg-primary" : "w-1 bg-foreground/20 hover:bg-foreground/50"}`}
                 />
               ))}
             </div>
@@ -70,7 +70,7 @@ export default function AnnouncementBar({ config, variant = "top", testid = "ann
           <button
             onClick={() => setDismissed(true)}
             aria-label="Dismiss"
-            className="shrink-0 rounded-full p-1 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="shrink-0 rounded-full p-1 text-foreground/50 transition-colors hover:bg-foreground/10 hover:text-foreground"
             data-testid={`${testid}-dismiss`}
           >
             <X className="h-3.5 w-3.5" />

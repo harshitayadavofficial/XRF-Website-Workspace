@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -7,14 +7,39 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, ScanLine, ArrowRight } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
+import { usePublicSettings } from "@/context/SettingsContext";
+import { useTheme } from "@/context/ThemeContext";
+import { resolveAssetUrl } from "@/components/FileUpload";
 
 export default function Login() {
   const { login } = useAuth();
+  const { settings } = usePublicSettings();
+  const { theme } = useTheme();
+  const brandName = settings?.company?.name || "ORNETOPS";
+  const logoConfig = settings?.logo || { mode: "text", text: "ORNETOPS", image: "", image_light: "", image_dark: "" };
+
+  // Theme-aware logo image for form side
+  let formLogoImg = logoConfig.image;
+  if (theme === "dark" && logoConfig.image_dark) {
+    formLogoImg = logoConfig.image_dark;
+  } else if (theme === "light" && logoConfig.image_light) {
+    formLogoImg = logoConfig.image_light;
+  } else if (logoConfig.image_light) {
+    formLogoImg = logoConfig.image_light;
+  }
+
+  // Dark-theme logo image for left branding side (always dark background)
+  const leftLogoImg = logoConfig.image_dark || logoConfig.image || logoConfig.image_light;
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/admin";
-  const [email, setEmail] = useState("admin@aurumtech.com");
-  const [password, setPassword] = useState("Admin@123");
+
+  useEffect(() => {
+    document.title = `Admin Login | ${brandName}`;
+  }, [brandName]);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -41,17 +66,27 @@ export default function Login() {
           className="absolute -right-20 -top-20 h-[420px] w-[420px] rounded-full opacity-30 blur-3xl"
           style={{ background: "radial-gradient(circle at center, #D4AF37 0%, transparent 60%)" }}
         />
-        <div className="relative z-10 flex items-center gap-2 text-sm font-semibold">
-          <ScanLine className="h-5 w-5 text-primary" /> AurumTech Instruments
+        <div className="relative z-10 flex items-center gap-2.5 text-sm font-semibold">
+          {logoConfig.mode !== "text" && leftLogoImg ? (
+            <img src={resolveAssetUrl(leftLogoImg)} alt="Logo" className="h-8 w-auto object-contain" />
+          ) : (
+            <ScanLine className="h-5 w-5 text-primary" />
+          )}
+          {logoConfig.mode !== "image" && <span>{logoConfig.text || brandName}</span>}
         </div>
-        <div className="relative z-10">
-          <h1 className="font-display text-5xl font-medium leading-[0.95] tracking-tighter text-balance">
-            Precision Engineered<br />
-            for the world of <span className="text-primary">Precious Metals</span>.
-          </h1>
-          <p className="mt-4 max-w-md text-sm text-zinc-400">
-            Enterprise console for managing your XRF analyzers, hallmarking workflow, leads, and global dealer network.
-          </p>
+        <div className="relative z-10 space-y-6">
+          {logoConfig.mode !== "text" && leftLogoImg && (
+            <img src={resolveAssetUrl(leftLogoImg)} alt="Logo" className="h-12 w-auto object-contain" />
+          )}
+          <div>
+            <h1 className="font-display text-5xl font-medium leading-[0.95] tracking-tighter text-balance">
+              Precision Engineered<br />
+              for the world of <span className="text-primary">Precious Metals</span>.
+            </h1>
+            <p className="mt-4 max-w-md text-sm text-zinc-400">
+              Enterprise console for managing your XRF analyzers, hallmarking workflow, leads, and global dealer network.
+            </p>
+          </div>
         </div>
         <div className="relative z-10 text-[11px] uppercase tracking-[0.2em] text-zinc-500">
           © {new Date().getFullYear()} · Enterprise CMS + CRM
@@ -63,10 +98,16 @@ export default function Login() {
         <div className="absolute right-4 top-4"><ThemeToggle /></div>
         <Card className="w-full max-w-sm border-border/60">
           <CardContent className="p-8">
-            <div className="mb-6 flex flex-col items-start">
-              <div className="rounded-md border bg-secondary p-2"><ScanLine className="h-4 w-4 text-primary" /></div>
-              <h2 className="mt-4 text-2xl font-medium tracking-tight">Welcome back</h2>
-              <p className="text-sm text-muted-foreground">Sign in to AurumTech Admin</p>
+            <div className="mb-6 flex flex-col items-start gap-4">
+              {logoConfig.mode !== "text" && formLogoImg ? (
+                <img src={resolveAssetUrl(formLogoImg)} alt="Logo" className="h-10 w-auto object-contain" />
+              ) : (
+                <div className="rounded-md border bg-secondary p-2"><ScanLine className="h-4 w-4 text-primary" /></div>
+              )}
+              <div>
+                <h2 className="text-2xl font-medium tracking-tight">Welcome back</h2>
+                <p className="text-sm text-muted-foreground">Sign in to {brandName} Admin</p>
+              </div>
             </div>
             <form onSubmit={submit} className="space-y-4">
               <div>
@@ -92,12 +133,7 @@ export default function Login() {
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : (<>Sign in <ArrowRight className="ml-2 h-4 w-4" /></>)}
               </Button>
             </form>
-            <div className="mt-6 rounded-md border border-dashed border-border bg-secondary/40 p-3 text-xs text-muted-foreground">
-              <div className="mb-1 font-semibold text-foreground">Demo credentials</div>
-              <div>admin@aurumtech.com / Admin@123</div>
-              <div>sales@aurumtech.com / Sales@123</div>
-              <div>content@aurumtech.com / Content@123</div>
-            </div>
+
             <div className="mt-6 text-center text-xs text-muted-foreground">
               <Link to="/" className="hover:text-primary">← Back to website</Link>
             </div>

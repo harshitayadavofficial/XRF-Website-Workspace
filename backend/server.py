@@ -8,8 +8,11 @@ import os
 import logging
 import uuid
 import secrets
+import time
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Annotated, Any
+from notify import notify_new_submission
 
 import bcrypt
 import jwt
@@ -27,13 +30,13 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # ---------- App ----------
-app = FastAPI(title="AurumTech Instruments API")
+app = FastAPI(title="ORNETOPS API")
 api = APIRouter(prefix="/api")
 
 # ---------- Object Storage (Emergent) ----------
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-APP_NAME = "aurumtech"
+APP_NAME = "ornetops"
 _storage_key: Optional[str] = None
 
 MIME_BY_EXT = {
@@ -51,53 +54,42 @@ ALLOWED_UPLOAD = ALLOWED_IMAGE | ALLOWED_VIDEO | ALLOWED_DOC
 
 MAX_IMAGE_SIZE = 10 * 1024 * 1024     # 10 MB
 MAX_VIDEO_SIZE = 100 * 1024 * 1024    # 100 MB
-MAX_DOC_SIZE = 25 * 1024 * 1024       # 25 MB
+MAX_DOC_SIZE = 100 * 1024 * 1024      # 100 MB (Supports up to 100MB 3D models)
 
+UPLOAD_DIR = ROOT_DIR / "uploads"
 
 def _init_storage():
-    global _storage_key
-    if _storage_key:
-        return _storage_key
-    if not EMERGENT_KEY:
-        raise RuntimeError("EMERGENT_LLM_KEY missing — uploads disabled")
-    r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-    r.raise_for_status()
-    _storage_key = r.json()["storage_key"]
-    return _storage_key
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    return "local"
 
 
 def _put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = _init_storage()
-    r = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=180,
-    )
-    if r.status_code == 403:
-        global _storage_key
-        _storage_key = None
-        key = _init_storage()
-        r = requests.put(
-            f"{STORAGE_URL}/objects/{path}",
-            headers={"X-Storage-Key": key, "Content-Type": content_type},
-            data=data, timeout=180,
-        )
-    r.raise_for_status()
-    return r.json()
+    _init_storage()
+    # Security: Ensure path is relative and does not escape UPLOAD_DIR
+    safe_path = str(path).lstrip("\\/")
+    target_file = (UPLOAD_DIR / safe_path).resolve()
+    if not str(target_file).startswith(str(UPLOAD_DIR.resolve())):
+        raise ValueError("Directory traversal attempt detected")
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(target_file, "wb") as f:
+        f.write(data)
+    return {"path": path}
 
 
 def _get_object(path: str):
-    key = _init_storage()
-    r = requests.get(f"{STORAGE_URL}/objects/{path}",
-                     headers={"X-Storage-Key": key}, timeout=120)
-    if r.status_code == 403:
-        global _storage_key
-        _storage_key = None
-        key = _init_storage()
-        r = requests.get(f"{STORAGE_URL}/objects/{path}",
-                         headers={"X-Storage-Key": key}, timeout=120)
-    r.raise_for_status()
-    return r.content, r.headers.get("Content-Type", "application/octet-stream")
+    _init_storage()
+    # Security: Ensure path is relative and does not escape UPLOAD_DIR
+    safe_path = str(path).lstrip("\\/")
+    target_file = (UPLOAD_DIR / safe_path).resolve()
+    if not str(target_file).startswith(str(UPLOAD_DIR.resolve())):
+        raise ValueError("Directory traversal attempt detected")
+    if not target_file.exists() or target_file.is_dir():
+        raise FileNotFoundError(f"Local file not found: {path}")
+    with open(target_file, "rb") as f:
+        content = f.read()
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else "bin"
+    ctype = MIME_BY_EXT.get(ext, "application/octet-stream")
+    return content, ctype
 
 
 # ---------- Auth helpers ----------
@@ -130,15 +122,42 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def set_auth_cookies(response: Response, access: str, refresh: str):
-    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none", max_age=8 * 3600, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none", max_age=7 * 24 * 3600, path="/")
+    cookie_secure = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
+    # Security: Use 'lax' for SameSite cookie attribute to protect against CSRF attacks.
+    samesite = "lax"
+    response.set_cookie("access_token", access, httponly=True, secure=cookie_secure, samesite=samesite, max_age=8 * 3600, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=cookie_secure, samesite=samesite, max_age=7 * 24 * 3600, path="/")
 
 
 # ---------- Models ----------
 def _id_str(v: Any) -> str:
-    if isinstance(v, ObjectId):
-        return str(v)
-    return str(v)
+    return str(v) if v is not None else ""
+
+# ---------- Version Tracker ----------
+DATA_VERSION = 1
+
+def bump_data_version():
+    global DATA_VERSION
+    DATA_VERSION += 1
+
+# ---------- Rate Limiter ----------
+_rate_store: dict = {}  # ip -> [timestamp, ...]
+_RATE_LIMIT = 10  # max requests
+_RATE_WINDOW = 60  # seconds
+
+def rate_limit(request: Request):
+    """Allow max 10 public form submissions per IP per 60 seconds."""
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    hits = _rate_store.get(ip, [])
+    hits = [t for t in hits if now - t < _RATE_WINDOW]
+    if len(hits) >= _RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please wait a minute before submitting again."
+        )
+    hits.append(now)
+    _rate_store[ip] = hits
 
 PyObjectId = Annotated[str, BeforeValidator(_id_str)]
 
@@ -351,6 +370,7 @@ async def audit(user: dict, action: str, module: str, entity_id: str = "", detai
 # ---------- Auth Endpoints ----------
 @api.post("/auth/login")
 async def login(payload: LoginIn, response: Response, request: Request):
+    rate_limit(request)
     email = payload.email.lower().strip()
     # Use email-only identifier so K8s ingress IP rotation doesn't bypass lockout.
     identifier = f"email:{email}"
@@ -473,15 +493,22 @@ def make_cms_routes(name: str, allowed_roles: tuple = ("super_admin", "admin", "
     @api.post(f"/{coll}")
     async def create_item(payload: GenericIn, request: Request, user: dict = Depends(require_role(*allowed_roles))):
         d = payload.model_dump()
+        email_notification = d.pop("email_notification", None)
         d["created_at"] = now_iso()
         d["updated_at"] = now_iso()
         r = await db[coll].insert_one(d)
         await audit(user, "create", coll, str(r.inserted_id), None, request)
+        if coll == "blogs" and email_notification and email_notification.get("enabled"):
+            from notify import send_blog_notification_emails
+            blog_doc = {**d, "_id": r.inserted_id}
+            asyncio.create_task(send_blog_notification_emails(db, blog_doc, email_notification))
+        bump_data_version()
         return {**doc_out({**d, "_id": r.inserted_id})}
 
     @api.patch(f"/{coll}/{{iid}}")
     async def update_item(iid: str, payload: GenericIn, request: Request, user: dict = Depends(require_role(*allowed_roles))):
         d = payload.model_dump()
+        email_notification = d.pop("email_notification", None)
         d["updated_at"] = now_iso()
         try:
             r = await db[coll].update_one({"_id": ObjectId(iid)}, {"$set": d})
@@ -490,6 +517,11 @@ def make_cms_routes(name: str, allowed_roles: tuple = ("super_admin", "admin", "
         if not r.matched_count:
             raise HTTPException(status_code=404, detail="Not found")
         await audit(user, "update", coll, iid, None, request)
+        if coll == "blogs" and email_notification and email_notification.get("enabled"):
+            from notify import send_blog_notification_emails
+            blog_doc = {**d, "_id": ObjectId(iid)}
+            asyncio.create_task(send_blog_notification_emails(db, blog_doc, email_notification))
+        bump_data_version()
         return {"ok": True}
 
     @api.delete(f"/{coll}/{{iid}}")
@@ -501,6 +533,7 @@ def make_cms_routes(name: str, allowed_roles: tuple = ("super_admin", "admin", "
         if not r.deleted_count:
             raise HTTPException(status_code=404, detail="Not found")
         await audit(user, "delete", coll, iid, None, request)
+        bump_data_version()
         return {"ok": True}
 
     # Rename to avoid name collisions (FastAPI uses operation_id from function name)
@@ -540,6 +573,7 @@ async def list_leads(status: Optional[str] = None, source: Optional[str] = None,
 @api.post("/leads/public")
 async def public_create_lead(payload: LeadCreateIn, request: Request):
     """Public endpoint - used by contact/inquiry forms."""
+    rate_limit(request)
     d = payload.model_dump()
     d["status"] = "new"
     d["assigned_to"] = None
@@ -548,8 +582,10 @@ async def public_create_lead(payload: LeadCreateIn, request: Request):
     d["updated_at"] = now_iso()
     d["ip"] = request.client.host if request.client else ""
     r = await db.leads.insert_one(d)
-    # mock email notification: just log
+    # Trigger email/WhatsApp notifications in background
+    asyncio.create_task(notify_new_submission(db, "contact", d))
     logger.info(f"[LEAD] New lead from {d.get('email')} - {d.get('name')} - source={d.get('source')}")
+    bump_data_version()
     return {"ok": True, "id": str(r.inserted_id)}
 
 @api.post("/leads")
@@ -562,6 +598,7 @@ async def create_lead(payload: LeadCreateIn, request: Request, user: dict = Depe
     d["updated_at"] = now_iso()
     r = await db.leads.insert_one(d)
     await audit(user, "create", "leads", str(r.inserted_id), None, request)
+    bump_data_version()
     return doc_out({**d, "_id": r.inserted_id})
 
 @api.patch("/leads/{lid}")
@@ -577,6 +614,7 @@ async def update_lead(lid: str, payload: LeadUpdateIn, request: Request, user: d
     if not r.matched_count:
         raise HTTPException(status_code=404, detail="Not found")
     await audit(user, "update", "leads", lid, {"keys": list(updates.keys())}, request)
+    bump_data_version()
     return {"ok": True}
 
 @api.post("/leads/{lid}/notes")
@@ -603,7 +641,8 @@ async def delete_lead(lid: str, request: Request, user: dict = Depends(require_r
 
 # ---------- Demo / Quote / Ticket (public submission, admin manage) ----------
 @api.post("/demo-requests/public")
-async def public_demo(payload: DemoRequestIn):
+async def public_demo(payload: DemoRequestIn, request: Request):
+    rate_limit(request)
     d = payload.model_dump()
     d["status"] = "new"
     d["created_at"] = now_iso()
@@ -616,6 +655,9 @@ async def public_demo(payload: DemoRequestIn):
         "source": "demo_request", "status": "new", "assigned_to": None, "notes": [],
         "created_at": now_iso(), "updated_at": now_iso(),
     })
+    # Trigger notifications in background
+    asyncio.create_task(notify_new_submission(db, "demo", d))
+    bump_data_version()
     return {"ok": True, "id": str(r.inserted_id)}
 
 @api.get("/demo-requests")
@@ -636,10 +678,12 @@ async def update_demo(did: str, payload: GenericIn, request: Request, user: dict
     if not r.matched_count:
         raise HTTPException(status_code=404, detail="Not found")
     await audit(user, "update", "demo_requests", did, None, request)
+    bump_data_version()
     return {"ok": True}
 
 @api.post("/quote-requests/public")
-async def public_quote(payload: QuoteRequestIn):
+async def public_quote(payload: QuoteRequestIn, request: Request):
+    rate_limit(request)
     d = payload.model_dump()
     d["status"] = "new"
     d["created_at"] = now_iso()
@@ -651,6 +695,9 @@ async def public_quote(payload: QuoteRequestIn):
         "status": "new", "assigned_to": None, "notes": [],
         "created_at": now_iso(), "updated_at": now_iso(),
     })
+    # Trigger notifications in background
+    asyncio.create_task(notify_new_submission(db, "quote", d))
+    bump_data_version()
     return {"ok": True, "id": str(r.inserted_id)}
 
 @api.get("/quote-requests")
@@ -671,6 +718,110 @@ async def update_quote(qid: str, payload: GenericIn, request: Request, user: dic
     if not r.matched_count:
         raise HTTPException(status_code=404, detail="Not found")
     await audit(user, "update", "quote_requests", qid, None, request)
+    bump_data_version()
+    return {"ok": True}
+
+@api.post("/quote-requests/{qid}/send-quote-pdf")
+async def send_quote_pdf_email(qid: str, request: Request, user: dict = Depends(require_staff)):
+    try:
+        quote = await db.quote_requests.find_one({"_id": ObjectId(qid)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid quote ID")
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote request not found")
+
+    settings_doc = await db.settings.find_one({"_id": "global"}) or {}
+    email_cfg = settings_doc.get("email", {})
+    if not email_cfg or not email_cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="Email sending is disabled. Please configure and enable outbound emails in Settings.")
+
+    # 1. Look up the product to see if there is an uploaded brochure PDF file
+    product_name = quote.get("product")
+    brochure_bytes = None
+    brochure_filename = None
+    if product_name:
+        from bson import Regex
+        prod_doc = await db.products.find_one({
+            "$or": [
+                {"name": product_name},
+                {"slug": product_name},
+                {"name": Regex(f"^{product_name}$", "i")}
+            ]
+        })
+        if prod_doc and prod_doc.get("brochure_url"):
+            b_url = prod_doc["brochure_url"]
+            idx = b_url.find("/api/files/")
+            if idx != -1:
+                rel_path = "uploads/" + b_url[idx + len("/api/files/"):]
+                brochure_path = ROOT_DIR / rel_path
+                if brochure_path.exists():
+                    try:
+                        with open(brochure_path, "rb") as f:
+                            brochure_bytes = f.read()
+                        brochure_filename = brochure_path.name
+                    except Exception as e:
+                        logger.error(f"Failed to read brochure file: {e}")
+
+    # 2. Generate the Quotation PDF
+    from export_pdf import generate_quote_pdf
+    quote_data = {**quote, "id": str(quote["_id"])}
+    try:
+        quote_pdf_bytes = generate_quote_pdf(quote_data, settings_doc)
+    except Exception as e:
+        logger.error(f"Failed to generate quote PDF: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate Quotation PDF: {str(e)}")
+
+    # 3. Assemble email attachments
+    attachments = []
+    # Dynamic quote PDF
+    attachments.append({
+        "content": quote_pdf_bytes,
+        "filename": f"Quotation_{qid[-6:].upper()}.pdf",
+        "content_type": "application/pdf"
+    })
+    # Optional brochure PDF
+    if brochure_bytes:
+        attachments.append({
+            "content": brochure_bytes,
+            "filename": brochure_filename or "Product_Brochure.pdf",
+            "content_type": "application/pdf"
+        })
+
+    # Logo attachment for header inline embedding (from Task 3)
+    from notify import get_logo_attachment, wrap_email_html, send_email
+    logo_att = get_logo_attachment(settings_doc)
+    if logo_att:
+        attachments.append(logo_att)
+
+    # 4. Construct email body
+    company_name = settings_doc.get("company", {}).get("name", "ORNETOPS")
+    client_name = quote.get("name", "Customer")
+    
+    body_content = f"""
+    <p>Dear {client_name},</p>
+    <p>Thank you for your interest in our gold testing and XRF solutions. As requested, we have enclosed your official price quotation and product documentation for <strong>{product_name or 'our systems'}</strong>.</p>
+    <p>Our sales team is ready to assist you with any custom requirements or technical validation needs.</p>
+    <p>Best regards,<br/><strong>{company_name} Sales Team</strong></p>
+    """
+    
+    body_html = wrap_email_html(body_content, company_name, has_logo_cid=(logo_att is not None))
+    subject = f"Your Quotation from {company_name} - Ref: Q-{qid[-6:].upper()}"
+    to_email = quote.get("email")
+    if not to_email:
+        raise HTTPException(status_code=400, detail="Client has no email address configured")
+
+    # 5. Send email in background/synced
+    try:
+        await send_email(email_cfg, to_email, subject, body_html, attachments=attachments, raise_errors=True)
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to dispatch email (SMTP Host Unreachable or Invalid Config).")
+
+    # 6. Update request status to "sent"
+    await db.quote_requests.update_one({"_id": ObjectId(qid)}, {"$set": {"status": "sent", "updated_at": now_iso()}})
+    await audit(user, "send_quote_pdf", "quote_requests", qid, {"email": to_email}, request)
+    bump_data_version()
+
     return {"ok": True}
 
 @api.post("/tickets/public")
@@ -712,9 +863,223 @@ async def list_audit(limit: int = 200, user: dict = Depends(require_role("super_
     return items
 
 
+# ---------- System Logs ----------
+@api.get("/system/logs/download")
+async def download_system_logs(archive: bool = False, user: dict = Depends(require_role("super_admin", "admin"))):
+    log_dir = ROOT_DIR / "logs"
+    if archive:
+        import zipfile
+        import io
+        log_files = []
+        if log_dir.exists():
+            for p in log_dir.glob("logs.txt*"):
+                if p.is_file():
+                    log_files.append(p)
+        if not log_files:
+            log_dir.mkdir(exist_ok=True)
+            log_path = log_dir / "logs.txt"
+            log_path.touch()
+            log_files.append(log_path)
+            
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for p in log_files:
+                zip_file.write(p, arcname=p.name)
+        zip_buffer.seek(0)
+        return Response(
+            zip_buffer.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": "attachment; filename=system_logs_archive.zip"}
+        )
+    else:
+        from fastapi.responses import FileResponse
+        log_path = log_dir / "logs.txt"
+        if not log_path.exists():
+            log_dir.mkdir(exist_ok=True)
+            log_path.touch()
+        return FileResponse(log_path, filename="logs.txt", media_type="text/plain")
+
+
+# ---------- Export Data ----------
+@api.get("/export/{resource}")
+async def export_data(
+    resource: str,
+    format: str = "csv",  # "csv", "xlsx", "pdf"
+    user: dict = Depends(require_role("super_admin", "admin"))
+):
+    import io
+    collection_map = {
+        "leads": (db.leads, [
+            ("name", "Name"),
+            ("email", "Email"),
+            ("phone", "Phone"),
+            ("company", "Company"),
+            ("city", "City"),
+            ("product_interest", "Product Interest"),
+            ("status", "Status"),
+            ("source", "Source"),
+            ("created_at", "Created At")
+        ], "Leads_Export"),
+        
+        "demo-requests": (db.demo_requests, [
+            ("name", "Name"),
+            ("email", "Email"),
+            ("phone", "Phone"),
+            ("company", "Company"),
+            ("city", "City"),
+            ("product_interest", "Product Interest"),
+            ("preferred_date", "Preferred Date"),
+            ("status", "Status"),
+            ("created_at", "Created At")
+        ], "Demo_Requests_Export"),
+        
+        "quote-requests": (db.quote_requests, [
+            ("name", "Name"),
+            ("email", "Email"),
+            ("phone", "Phone"),
+            ("company", "Company"),
+            ("product", "Product"),
+            ("quantity", "Quantity"),
+            ("status", "Status"),
+            ("created_at", "Created At")
+        ], "Quote_Requests_Export"),
+        
+        "tickets": (db.tickets, [
+            ("name", "Name"),
+            ("email", "Email"),
+            ("phone", "Phone"),
+            ("company", "Company"),
+            ("subject", "Subject"),
+            ("priority", "Priority"),
+            ("status", "Status"),
+            ("created_at", "Created At")
+        ], "Support_Tickets_Export"),
+        
+        "audit-logs": (db.audit_logs, [
+            ("created_at", "Timestamp"),
+            ("user_email", "User Email"),
+            ("role", "Role"),
+            ("action", "Action"),
+            ("module", "Module"),
+            ("entity_id", "Entity ID"),
+            ("ip", "IP Address")
+        ], "Audit_Logs_Export")
+    }
+    
+    if resource not in collection_map:
+        cms_colls = ["blogs", "categories", "industries", "services", "testimonials", "case_studies", "dealers"]
+        if resource in cms_colls:
+            collection_map[resource] = (db[resource], [
+                ("title" if resource in ["blogs", "case_studies"] else "name", "Name/Title"),
+                ("slug", "Slug"),
+                ("created_at", "Created At")
+            ], f"{resource.capitalize()}_Export")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid export resource")
+            
+    coll, cols, filename_prefix = collection_map[resource]
+    
+    cursor = coll.find().sort("created_at", -1)
+    data = await cursor.to_list(length=5000)
+    
+    formatted_data = []
+    for item in data:
+        row = {}
+        for key, _ in cols:
+            val = item.get(key, "")
+            if key == "created_at" and val:
+                try:
+                    val = str(val)[:19].replace("T", " ")
+                except:
+                    pass
+            row[key] = val
+        formatted_data.append(row)
+        
+    filename = f"{filename_prefix}_{int(time.time())}"
+    
+    if format == "csv":
+        import csv
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([label for _, label in cols])
+        for row in formatted_data:
+            writer.writerow([row.get(k, "") for k, _ in cols])
+        
+        content = output.getvalue()
+        output.close()
+        return Response(
+            content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}.csv"}
+        )
+        
+    elif format == "xlsx":
+        import pandas as pd
+        df = pd.DataFrame(formatted_data)
+        col_rename = {k: label for k, label in cols}
+        df = df.rename(columns=col_rename)
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+            
+        content = output.getvalue()
+        output.close()
+        return Response(
+            content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}.xlsx"}
+        )
+        
+    elif format == "pdf":
+        from export_pdf import export_to_pdf
+        title_label = filename_prefix.replace("_", " ")
+        # Fetch company name and logo from settings for PDF header
+        _settings_doc = await db.settings.find_one({"_id": "global"}) or {}
+        _company = _settings_doc.get("company", {}) or {}
+        _company_name = _company.get("name", "ORNETOPS")
+        _logo_url = _company.get("pdf_logo", "")
+        if not _logo_url:
+            _logo_cfg = _settings_doc.get("logo", {}) or {}
+            if isinstance(_logo_cfg, dict):
+                _logo_url = _logo_cfg.get("image_light") or _logo_cfg.get("image") or _logo_cfg.get("image_dark") or ""
+        if not _logo_url:
+            _logo_url = _company.get("logo", "")
+        _pdf_footer_text = _company.get("pdf_footer_text", "")
+        
+        _pdf_header_style = _company.get("pdf_header_style", "dark")
+        _pdf_company_name = _company.get("pdf_company_name", "") or _company_name
+        try:
+            _pdf_logo_height = int(_company.get("pdf_logo_height", 35))
+        except Exception:
+            _pdf_logo_height = 35
+
+        _pdf_header_bg = _company.get("pdf_header_bg", "")
+        _pdf_header_text_color = _company.get("pdf_header_text_color", "")
+
+        pdf_content = export_to_pdf(formatted_data, cols, title_label,
+                                    company_name=_pdf_company_name, logo_url=_logo_url,
+                                    pdf_footer_text=_pdf_footer_text,
+                                    pdf_header_style=_pdf_header_style,
+                                    pdf_logo_height=_pdf_logo_height,
+                                    pdf_header_bg=_pdf_header_bg,
+                                    pdf_header_text_color=_pdf_header_text_color)
+        return Response(
+            pdf_content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}.pdf"}
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format")
+
+
 # ---------- Settings (key-value store) ----------
+@api.get("/data-version")
+async def get_data_version():
+    return {"version": DATA_VERSION}
+
 @api.get("/settings")
-async def get_settings():
+async def get_settings(user: dict = Depends(require_role("super_admin", "admin"))):
     doc = await db.settings.find_one({"_id": "global"})
     if not doc:
         return {}
@@ -726,7 +1091,32 @@ async def get_settings():
             out["email"]["password"] = "********"
         if out["email"].get("api_key"):
             out["email"]["api_key"] = "********"
+    if "whatsapp_cfg" in out and isinstance(out["whatsapp_cfg"], dict):
+        if out["whatsapp_cfg"].get("twilio_token"):
+            out["whatsapp_cfg"]["twilio_token"] = "********"
+        if out["whatsapp_cfg"].get("wa_access_token"):
+            out["whatsapp_cfg"]["wa_access_token"] = "********"
     return out
+
+
+@api.get("/settings/public")
+async def get_settings_public():
+    doc = await db.settings.find_one({"_id": "global"})
+    if not doc:
+        return {}
+    out = {**doc}
+    out.pop("_id", None)
+    # Completely remove SMTP credentials and private settings
+    out.pop("email", None)
+    if "whatsapp_cfg" in out and isinstance(out["whatsapp_cfg"], dict):
+        public_wa = {
+            "enabled": out["whatsapp_cfg"].get("enabled", False),
+            "number": out["whatsapp_cfg"].get("number", ""),
+            "default_msg": out["whatsapp_cfg"].get("default_msg", ""),
+        }
+        out["whatsapp_cfg"] = public_wa
+    return out
+
 
 @api.put("/settings")
 async def put_settings(payload: GenericIn, request: Request, user: dict = Depends(require_role("super_admin", "admin"))):
@@ -738,8 +1128,14 @@ async def put_settings(payload: GenericIn, request: Request, user: dict = Depend
             d["email"]["password"] = existing.get("email", {}).get("password", "")
         if d["email"].get("api_key") in (None, "", "********"):
             d["email"]["api_key"] = existing.get("email", {}).get("api_key", "")
+    if isinstance(d.get("whatsapp_cfg"), dict):
+        if d["whatsapp_cfg"].get("twilio_token") in (None, "", "********"):
+            d["whatsapp_cfg"]["twilio_token"] = existing.get("whatsapp_cfg", {}).get("twilio_token", "")
+        if d["whatsapp_cfg"].get("wa_access_token") in (None, "", "********"):
+            d["whatsapp_cfg"]["wa_access_token"] = existing.get("whatsapp_cfg", {}).get("wa_access_token", "")
     await db.settings.update_one({"_id": "global"}, {"$set": d}, upsert=True)
     await audit(user, "update", "settings", "global", None, request)
+    bump_data_version()
     return {"ok": True}
 
 
@@ -792,6 +1188,79 @@ async def dashboard_stats(user: dict = Depends(require_staff)):
     }
 
 
+@api.get("/system/stats")
+async def system_stats(user: dict = Depends(require_role("super_admin", "admin"))):
+    import psutil
+    import platform
+    import time
+    
+    # Memory metrics
+    try:
+        vm = psutil.virtual_memory()
+        memory_stats = {
+            "total": vm.total,
+            "available": vm.available,
+            "used": vm.used,
+            "percent": vm.percent,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get memory stats: {e}")
+        memory_stats = {"total": 0, "available": 0, "used": 0, "percent": 0}
+
+    # CPU metrics
+    try:
+        cpu_stats = {
+            "percent": psutil.cpu_percent(interval=None),
+            "count_logical": psutil.cpu_count(logical=True),
+            "count_physical": psutil.cpu_count(logical=False),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get CPU stats: {e}")
+        cpu_stats = {"percent": 0, "count_logical": 0, "count_physical": 0}
+
+    # Disk metrics
+    try:
+        du = psutil.disk_usage("/")
+        disk_stats = {
+            "total": du.total,
+            "used": du.used,
+            "free": du.free,
+            "percent": du.percent,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get disk stats: {e}")
+        disk_stats = {"total": 0, "used": 0, "free": 0, "percent": 0}
+
+    # Python Process metrics
+    try:
+        proc = psutil.Process()
+        proc_mem = proc.memory_info().rss
+        uptime = time.time() - proc.create_time()
+        process_stats = {
+            "memory": proc_mem,
+            "uptime": uptime,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get process stats: {e}")
+        process_stats = {"memory": 0, "uptime": 0}
+
+    # OS Info
+    os_info = {
+        "system": platform.system(),
+        "release": platform.release(),
+        "version": platform.version(),
+        "python_version": platform.python_version(),
+    }
+
+    return {
+        "memory": memory_stats,
+        "cpu": cpu_stats,
+        "disk": disk_stats,
+        "process": process_stats,
+        "os": os_info,
+    }
+
+
 # ---------- Uploads ----------
 @api.post("/uploads")
 async def upload_files(
@@ -805,7 +1274,11 @@ async def upload_files(
     results = []
     for f in files:
         ext = (f.filename or "").rsplit(".", 1)[-1].lower() if "." in (f.filename or "") else "bin"
-        content_type = f.content_type or MIME_BY_EXT.get(ext, "application/octet-stream")
+        if f.content_type == "application/octet-stream" or not f.content_type:
+            content_type = MIME_BY_EXT.get(ext, "application/octet-stream")
+        else:
+            content_type = f.content_type
+            
         if content_type not in ALLOWED_UPLOAD:
             raise HTTPException(status_code=400, detail=f"File type not allowed: {content_type}")
 
@@ -817,7 +1290,7 @@ async def upload_files(
         if content_type in ALLOWED_VIDEO and size > MAX_VIDEO_SIZE:
             raise HTTPException(status_code=413, detail=f"Video '{f.filename}' exceeds 100MB")
         if content_type in ALLOWED_DOC and size > MAX_DOC_SIZE:
-            raise HTTPException(status_code=413, detail=f"File '{f.filename}' exceeds 25MB")
+            raise HTTPException(status_code=413, detail=f"File '{f.filename}' exceeds 100MB")
 
         kind = "image" if content_type in ALLOWED_IMAGE else ("video" if content_type in ALLOWED_VIDEO else "file")
         path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
@@ -881,12 +1354,12 @@ async def soft_delete_file(path: str, request: Request, user: dict = Depends(req
 
 @api.get("/")
 async def root():
-    return {"service": "AurumTech API", "status": "ok"}
+    return {"service": "ORNETOPS API", "status": "ok"}
 
 
 # ---------- Seed ----------
 async def seed_admin():
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@aurumtech.com").lower()
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@ornetops.com").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
@@ -904,8 +1377,8 @@ async def seed_admin():
 
     # Seed extra demo staff if missing
     demos = [
-        ("sales@aurumtech.com", "Sales Manager Demo", "sales_manager", "Sales@123"),
-        ("content@aurumtech.com", "Content Manager Demo", "content_manager", "Content@123"),
+        ("sales@ornetops.com", "Sales Manager Demo", "sales_manager", "Sales@123"),
+        ("content@ornetops.com", "Content Manager Demo", "content_manager", "Content@123"),
     ]
     for em, nm, rl, pw in demos:
         ex = await db.users.find_one({"email": em})
@@ -992,7 +1465,7 @@ async def seed_admin():
     if await db.testimonials.count_documents({}) == 0:
         await db.testimonials.insert_many([
             {"name": "R. Mehta", "title": "Founder, Mehta Jewellers",
-             "quote": "AurumTech's XRF Pro 9000 has transformed our daily karat verification – fast and bulletproof accuracy.",
+             "quote": "ORNETOPS's XRF Pro 9000 has transformed our daily karat verification – fast and bulletproof accuracy.",
              "rating": 5, "created_at": now_iso(), "updated_at": now_iso()},
             {"name": "S. Patel", "title": "Lab Manager, BIS Hallmarking Center",
              "quote": "Their hallmarking laser plus XRF combo is the most reliable setup we've used in 10 years.",
@@ -1042,19 +1515,66 @@ async def ensure_indexes():
 # Mount
 app.include_router(api)
 
-# CORS - use explicit origin with credentials
-frontend_url = os.environ.get("FRONTEND_URL", "*")
-cors_origins = [frontend_url] if frontend_url != "*" else ["*"]
+# CORS - allow domain, www subdomain, and direct IP for full compatibility
+_frontend_url = os.environ.get("FRONTEND_URL", "")
+_cors_origins = list(dict.fromkeys(filter(None, [
+    _frontend_url,
+    "https://ornetops.online",
+    "https://www.ornetops.online",
+    "https://141.148.195.149",
+    "http://localhost:3000",
+])))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ---------- Serve Frontend Static Files ----------
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+FRONTEND_BUILD_DIR = ROOT_DIR / ".." / "frontend" / "build"
+
+if FRONTEND_BUILD_DIR.exists():
+    # Mount static assets (js, css, media)
+    app.mount("/static", StaticFiles(directory=FRONTEND_BUILD_DIR / "static"), name="static")
+
+    # Serve the main index.html or root files (like favicon, manifest.json)
+    @app.get("/{path_name:path}")
+    async def serve_frontend(path_name: str):
+        # Exclude API endpoints from static file serving fallback
+        if path_name.startswith("api"):
+            raise HTTPException(status_code=404, detail="Not found")
+            
+        # Check if the file exists directly in the build folder (e.g. favicon.ico, manifest.json)
+        local_file = FRONTEND_BUILD_DIR / path_name
+        if local_file.is_file():
+            return FileResponse(local_file)
+            
+        # Fallback to index.html for React routing
+        index_file = FRONTEND_BUILD_DIR / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return {"error": "Frontend build files not found"}
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("aurumtech")
+logger = logging.getLogger("ornetops")
+
+try:
+    from logging.handlers import RotatingFileHandler
+    log_dir = ROOT_DIR / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / "logs.txt"
+    file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=100, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logging.getLogger().addHandler(file_handler)
+    logger.info("File logger initialized at backend/logs/logs.txt")
+except Exception as e:
+    logger.warning(f"Failed to initialize file logger: {e}")
 
 
 @app.on_event("startup")
@@ -1066,7 +1586,7 @@ async def _startup():
         logger.info("Object storage initialized")
     except Exception as e:
         logger.warning(f"Object storage init deferred: {e}")
-    logger.info("AurumTech API ready")
+    logger.info("ORNETOPS API ready")
 
 @app.on_event("shutdown")
 async def _shutdown():

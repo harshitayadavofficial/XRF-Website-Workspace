@@ -1,14 +1,15 @@
-import { useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, Briefcase, ShoppingBag, Newspaper, FileText,
-  MessageSquare, LifeBuoy, Calendar, Building2, Star, Settings, Activity,
+  MessageSquare, LifeBuoy, Calendar, Building2, Star, Settings, Activity, Cpu,
   LogOut, Menu, X, ScanLine, Layers, Tag, Wrench
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
+import { usePublicSettings } from "@/context/SettingsContext";
 
 const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -30,13 +31,23 @@ const NAV = [
   { type: "divider", label: "System" },
   { to: "/admin/users", label: "Users & Roles", icon: Users, roles: ["super_admin", "admin"] },
   { to: "/admin/audit", label: "Audit Log", icon: Activity, roles: ["super_admin", "admin"] },
+  { to: "/admin/system-stats", label: "System Stats", icon: Cpu, roles: ["super_admin", "admin"] },
   { to: "/admin/settings", label: "Settings", icon: Settings, roles: ["super_admin", "admin"] },
 ];
 
 export default function AdminLayout({ children }) {
   const { user, logout } = useAuth();
+  const { settings } = usePublicSettings();
+  const { pathname } = useLocation();
+  const brandName = settings?.company?.name || "ORNETOPS";
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const matched = NAV.find(n => n.to === pathname);
+    const pageLabel = matched ? matched.label : "Admin";
+    document.title = `${pageLabel} | ${brandName} Admin`;
+  }, [pathname, brandName]);
 
   const items = NAV.filter((n) => {
     if (n.type === "divider") return true;
@@ -58,7 +69,7 @@ export default function AdminLayout({ children }) {
         <div className="flex h-16 items-center gap-2 border-b px-5">
           <ScanLine className="h-5 w-5 text-primary" />
           <Link to="/admin" className="text-sm font-bold tracking-tight">
-            AurumTech<span className="text-primary">.</span>Admin
+            {brandName}<span className="text-primary">.</span>Admin
           </Link>
         </div>
         <nav className="scrollbar-thin h-[calc(100vh-4rem)] overflow-y-auto p-3 text-sm">

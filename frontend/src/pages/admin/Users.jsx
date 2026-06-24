@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
 
 const ROLES = [
   "super_admin", "admin", "sales_manager", "sales_executive",
@@ -19,6 +20,7 @@ const ROLES = [
 export default function Users() {
   const [items, setItems] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
   const { user } = useAuth();
 
   const load = async () => {
@@ -28,7 +30,6 @@ export default function Users() {
   useEffect(() => { load(); }, []);
 
   const remove = async (id) => {
-    if (!window.confirm("Delete this user?")) return;
     try {
       await api.delete(`/users/${id}`);
       toast.success("Deleted");
@@ -73,7 +74,7 @@ export default function Users() {
                   <TableCell className="text-right">
                     <Button size="icon" variant="ghost" onClick={() => setEditing(u)} data-testid={`edit-user-${u.id}`}><Pencil className="h-4 w-4" /></Button>
                     {user.role === "super_admin" && u.id !== user.id && (
-                      <Button size="icon" variant="ghost" onClick={() => remove(u.id)} data-testid={`delete-user-${u.id}`}><Trash2 className="h-4 w-4" /></Button>
+                      <Button size="icon" variant="ghost" onClick={() => setDeleteId(u.id)} data-testid={`delete-user-${u.id}`}><Trash2 className="h-4 w-4" /></Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -84,6 +85,19 @@ export default function Users() {
       </Card>
 
       {editing && <UserDialog item={editing} onClose={() => setEditing(null)} onSaved={load} />}
+
+      <DeleteConfirmDialog
+        open={!!deleteId}
+        onOpenChange={(o) => !o && setDeleteId(null)}
+        onConfirm={async () => {
+          if (deleteId) {
+            await remove(deleteId);
+            setDeleteId(null);
+          }
+        }}
+        title="Delete this user?"
+        description="Are you sure you want to permanently delete this user account? Their access to the administration panel will be immediately revoked."
+      />
     </div>
   );
 }

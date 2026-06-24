@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePublicSettings } from "@/context/SettingsContext";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveAssetUrl } from "@/components/FileUpload";
@@ -12,7 +13,8 @@ const SECTIONS = [
 
 export default function Technology() {
   const [blogs, setBlogs] = useState([]);
-  useEffect(() => { api.get("/blogs").then((r) => setBlogs(r.data)); }, []);
+  const { dataVersion } = usePublicSettings();
+  useEffect(() => { api.get("/blogs").then((r) => setBlogs(r.data)); }, [dataVersion]);
   return (
     <div className="border-b" data-testid="technology-page">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">

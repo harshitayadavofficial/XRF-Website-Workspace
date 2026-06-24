@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { resolveAssetUrl } from "@/components/FileUpload";
 import { ArrowRight, Search } from "lucide-react";
+import { usePublicSettings } from "@/context/SettingsContext";
 
 export default function ProductsList() {
   const [items, setItems] = useState([]);
@@ -13,12 +14,14 @@ export default function ProductsList() {
   const [params, setParams] = useSearchParams();
   const cat = params.get("cat") || "all";
   const [q, setQ] = useState("");
+  const { settings, dataVersion } = usePublicSettings();
+  const brandName = settings?.company?.name || "ORNETOPS";
 
   useEffect(() => {
     Promise.all([api.get("/products"), api.get("/categories")]).then(([p, c]) => {
       setItems(p.data); setCats(c.data);
     });
-  }, []);
+  }, [dataVersion]);
 
   const filtered = items.filter((p) => {
     if (cat !== "all" && p.category !== cat) return false;
@@ -32,7 +35,7 @@ export default function ProductsList() {
         <div className="mb-8">
           <div className="text-[11px] uppercase tracking-[0.2em] text-primary">Catalog</div>
           <h1 className="mt-1 font-display text-4xl font-medium tracking-tight lg:text-5xl">Products</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Explore the AurumTech portfolio of precision instruments.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Explore the {brandName} portfolio of precision instruments.</p>
         </div>
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Upload, X, Image as ImgIcon, Video as VideoIcon, File as FileIcon, Loader2, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
 
 /** Convert relative /api/files/... URLs to absolute for <img>/<video>. */
 export function resolveAssetUrl(url) {
@@ -43,6 +43,8 @@ export default function FileUpload({
     ? "video/mp4,video/quicktime,video/webm,video/x-m4v"
     : accept === "model"
     ? ".glb,.gltf,model/gltf-binary,model/gltf+json"
+    : accept === "pdf"
+    ? "application/pdf,.pdf"
     : "*/*";
 
   const urls = mode === "multiple" ? (Array.isArray(value) ? value : []) : (value ? [value] : []);
@@ -129,7 +131,8 @@ export default function FileUpload({
               <div className="text-xs text-muted-foreground">
                 {accept === "image" && "JPG, PNG, WebP, GIF, SVG · up to 10MB"}
                 {accept === "video" && "MP4, MOV, WebM · up to 100MB"}
-                {accept === "model" && "GLB or GLTF · up to 25MB"}
+                {accept === "model" && "GLB or GLTF · up to 100MB"}
+                {accept === "pdf" && "PDF only · up to 25MB"}
                 {accept === "any" && "Images, videos, 3D models"}
               </div>
             </div>
@@ -161,6 +164,7 @@ function PreviewTile({ url, accept, onRemove }) {
   const isVideo = accept === "video" || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
   const isYouTube = /(?:youtu\.be|youtube\.com)/i.test(url);
   const isModel = /\.(glb|gltf)(\?|$)/i.test(url);
+  const isPdf = accept === "pdf" || /\.pdf(\?|$)/i.test(url);
 
   return (
     <div className="group relative overflow-hidden rounded-md border bg-card">
@@ -171,8 +175,11 @@ function PreviewTile({ url, accept, onRemove }) {
           </div>
         ) : isVideo ? (
           <video src={resolved} className="h-full w-full object-cover" muted />
-        ) : isModel ? (
-          <div className="flex h-full w-full items-center justify-center"><FileIcon className="h-8 w-8 text-primary" /></div>
+        ) : isModel || isPdf ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1">
+            <FileIcon className="h-8 w-8 text-primary" />
+            {isPdf && <span className="text-[10px] uppercase tracking-widest text-muted-foreground">PDF</span>}
+          </div>
         ) : (
           <img src={resolved} alt="" className="h-full w-full object-cover" />
         )}

@@ -8,6 +8,7 @@ import ThreeViewer from "@/components/ThreeViewer";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import { resolveAssetUrl } from "@/components/FileUpload";
 import { usePublicSettings } from "@/context/SettingsContext";
+import { useTheme } from "@/context/ThemeContext";
 import {
   Award, Globe2, ShieldCheck, Sparkles, Zap, Layers, Flame, Code,
   ScanLine, BadgeCheck, ArrowRight, ArrowUpRight, Quote,
@@ -42,7 +43,8 @@ export default function Home() {
   const [testimonials, setTestimonials] = useState([]);
   const [caseStudies, setCaseStudies] = useState([]);
   const [blogs, setBlogs] = useState([]);
-  const { settings } = usePublicSettings();
+  const { settings, dataVersion } = usePublicSettings();
+  const { theme } = useTheme();
 
   useEffect(() => {
     Promise.all([
@@ -52,27 +54,129 @@ export default function Home() {
       setProducts(p.data); setCats(c.data); setTestimonials(t.data);
       setCaseStudies(cs.data); setBlogs(b.data);
     });
-  }, []);
+  }, [dataVersion]);
 
-  const featured = products.filter((p) => p.featured).slice(0, 3);
+  const featured = products.filter((p) => p.featured).slice(0, 6);
   const flagship = featured[0] || products[0];
+  // ── Hero slide engine ────────────────────────────────────────────
+  const heroSlides = settings?.hero?.slides || [];
+  const heroInterval = (settings?.hero?.interval || 6) * 1000;
+
+  const DEFAULT_SLIDES = [
+    {
+      type: "image",
+      src: "https://images.unsplash.com/photo-1610375461246-83df859d849d?auto=format&fit=crop&w=1600&q=80",
+      label: "PRECIOUS METALS",
+      sublabel: "Gold & Silver Analysis",
+      desc: "Industry-standard precision for bullion and refineries."
+    },
+    {
+      type: "video",
+      src: "https://assets.mixkit.co/videos/preview/mixkit-close-up-of-a-laser-cutting-metal-41584-large.mp4",
+      label: "LASER TECHNOLOGY",
+      sublabel: "Advanced Marking Systems",
+      desc: "High-speed precision marking and engraving."
+    }
+  ];
+
+  // Build effective slide list: admin slides OR default slides + flagship 3D
+  const effectiveSlides = heroSlides.length > 0
+    ? heroSlides
+    : flagship && flagship.model_3d
+      ? [
+          ...DEFAULT_SLIDES,
+          { type: "3d", src: flagship.model_3d, label: "3D MODEL", sublabel: flagship.name || "", desc: flagship.tagline || "" }
+        ]
+      : DEFAULT_SLIDES;
+
+  const [slideIdx, setSlideIdx] = useState(0);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    if (effectiveSlides.length <= 1) return;
+    const t = setInterval(() => {
+      setFading(true);
+      setTimeout(() => {
+        setSlideIdx((i) => (i + 1) % effectiveSlides.length);
+        setFading(false);
+      }, 400);
+    }, heroInterval);
+    return () => clearInterval(t);
+  }, [effectiveSlides.length, heroInterval]);
+
+  const goTo = (idx) => {
+    if (idx === slideIdx) return;
+    setFading(true);
+    setTimeout(() => { setSlideIdx(idx); setFading(false); }, 400);
+  };
+
+  const currentSlide = effectiveSlides[slideIdx] || effectiveSlides[0];
 
   return (
     <div data-testid="home-page">
-      {/* HERO */}
-      <section className="relative overflow-hidden border-b">
+      {/* ── HERO ─────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden border-b bg-background" data-testid="hero-section">
+        {/* ambient glow */}
         <div
-          className="absolute -right-40 top-0 h-[600px] w-[600px] rounded-full opacity-20 blur-3xl"
+          className="pointer-events-none absolute -right-40 top-0 h-[700px] w-[700px] rounded-full opacity-25 blur-3xl"
           style={{ background: "radial-gradient(circle at center, hsl(var(--primary)) 0%, transparent 60%)" }}
         />
-        <div className="absolute inset-0 grain opacity-[0.04]" />
-        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-16 lg:grid-cols-2 lg:gap-16 lg:px-8 lg:py-24">
-          <div className="flex flex-col justify-center">
-            <Badge variant="outline" className="w-fit border-primary/30 bg-primary/5 text-[10px] uppercase tracking-[0.2em] text-primary">
-              Precision · BIS · NABL Certified
-            </Badge>
+        <div className="pointer-events-none absolute inset-0 grain opacity-[0.04]" />
+
+        {/* ── Slideshow background layer (Full Bleed) ── */}
+        <div className="absolute inset-0 z-0 bg-muted">
+          {/* Media layer */}
+          <div
+            className="h-full w-full transition-opacity duration-400"
+            style={{ opacity: fading ? 0 : 1 }}
+          >
+            {currentSlide?.type === "image" && currentSlide.src && currentSlide.src.trim() !== "" && (
+              <img
+                src={resolveAssetUrl(currentSlide.src)}
+                alt={currentSlide.label || ""}
+                className="h-full w-full object-cover dark:brightness-[0.4] transition-all duration-300"
+              />
+            )}
+            {currentSlide?.type === "video" && currentSlide.src && (
+              <video
+                key={currentSlide.src}
+                src={resolveAssetUrl(currentSlide.src)}
+                poster={currentSlide.poster ? resolveAssetUrl(currentSlide.poster) : undefined}
+                className="h-full w-full object-cover dark:brightness-[0.4] transition-all duration-300"
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+            )}
+            {(currentSlide?.type === "3d" || !currentSlide?.type) && (
+              <ThreeViewer
+                key={currentSlide?.src || "fallback"}
+                src={currentSlide?.src}
+                transparent
+                height="100%"
+                className="absolute inset-0"
+              />
+            )}
+          </div>
+
+          {/* Theme-aware overlay for text readability */}
+          <div className="absolute inset-0 bg-gradient-to-r from-background/80 via-background/45 to-transparent dark:from-background/90 dark:via-background/55 dark:to-transparent" />
+        </div>
+
+        <div className="relative z-10 mx-auto grid max-w-7xl lg:grid-cols-2" style={{ minHeight: 600 }}>
+          {/* ── LEFT: copy ── */}
+          <div className="flex flex-col justify-center px-4 py-20 lg:px-8 lg:py-28">
+            <div className="w-fit border border-border/40 bg-background/10 dark:bg-card/10 backdrop-blur-sm px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 font-medium">
+              <span className="text-muted-foreground">Precision</span>
+              <span className="text-muted-foreground/30">•</span>
+              <span className="text-primary font-bold">BIS Hallmark</span>
+              <span className="text-muted-foreground/30">•</span>
+              <span className="text-muted-foreground">NABL Certified</span>
+            </div>
             <h1 className="mt-6 font-display text-4xl font-medium leading-[0.95] tracking-tighter text-balance sm:text-5xl lg:text-6xl">
-              Precision Engineered for the world of{" "}
+              Precision Engineered{" "}
+              <span className="text-muted-foreground font-normal">for the world of</span>{" "}
               <span className="relative inline-block text-primary">
                 Precious Metals
                 <svg className="absolute -bottom-1 left-0 w-full" height="6" viewBox="0 0 200 6" preserveAspectRatio="none">
@@ -94,26 +198,59 @@ export default function Home() {
                 <Link to="/contact">Contact Expert <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" /></Link>
               </Button>
             </div>
-            <div className="mt-10 grid grid-cols-3 gap-4 border-t pt-6">
-              {STATS.slice(0, 3).map((s) => (
-                <div key={s.l}>
-                  <div className="font-display text-2xl font-medium tracking-tight tabular-nums">{s.v}</div>
-                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{s.l}</div>
-                </div>
-              ))}
-            </div>
           </div>
-          <div className="relative">
-            <ThreeViewer src={flagship?.model_3d} height={520} />
-            {flagship && (
-              <div className="absolute left-3 top-3 max-w-[200px] rounded-md border bg-background/85 backdrop-blur px-3 py-2 text-xs">
-                <div className="text-[10px] uppercase tracking-widest text-primary">Flagship</div>
-                <div className="font-semibold">{flagship.name}</div>
-                <div className="text-muted-foreground">{flagship.tagline}</div>
-              </div>
-            )}
-          </div>
+
+          {/* ── RIGHT: empty spacer to let background show ── */}
+          <div className="relative pointer-events-none lg:block hidden" />
         </div>
+
+        {/* Slide label HUD */}
+        {(currentSlide?.label || currentSlide?.sublabel) && (
+          <div
+            className="absolute right-4 top-4 z-20 max-w-[240px] rounded-md border border-border bg-card/85 backdrop-blur px-3 py-2 text-xs text-card-foreground shadow-sm transition-opacity duration-400"
+            style={{ opacity: fading ? 0 : 1 }}
+          >
+            {currentSlide.label && (
+              <div className="text-[10px] uppercase tracking-widest text-primary font-semibold">{currentSlide.label}</div>
+            )}
+            {currentSlide.sublabel && <div className="font-semibold mt-0.5">{currentSlide.sublabel}</div>}
+            {currentSlide.desc && <div className="text-muted-foreground text-[11px] mt-0.5">{currentSlide.desc}</div>}
+          </div>
+        )}
+
+        {/* Dot navigation */}
+        {effectiveSlides.length > 1 && (
+          <div className="absolute bottom-6 right-6 z-20 flex items-center gap-2">
+            {effectiveSlides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => goTo(i)}
+                className={`h-1.5 rounded-full transition-all ${i === slideIdx ? "w-6 bg-primary" : "w-1.5 bg-foreground/30 hover:bg-foreground/60"}`}
+                aria-label={`Slide ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Arrow nav */}
+        {effectiveSlides.length > 1 && (
+          <div className="absolute bottom-6 left-6 z-20 flex items-center gap-2">
+            <button
+              onClick={() => goTo((slideIdx - 1 + effectiveSlides.length) % effectiveSlides.length)}
+              className="rounded-sm border border-border bg-card/85 p-2 text-card-foreground backdrop-blur hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
+              aria-label="Previous slide"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <button
+              onClick={() => goTo((slideIdx + 1) % effectiveSlides.length)}
+              className="rounded-sm border border-border bg-card/85 p-2 text-card-foreground backdrop-blur hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
+              aria-label="Next slide"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Stats strip */}
@@ -127,6 +264,95 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {/* Trusted by Industry Leaders logo band */}
+      {settings?.trust_logos_cfg?.enabled !== false && settings?.trust_logos && settings.trust_logos.length > 0 && (
+        <section className="border-b bg-card py-12" data-testid="trust-logos-section">
+          <div className="mx-auto max-w-7xl px-4 lg:px-8">
+            <div className="text-center mb-8">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-primary font-semibold">
+                {settings?.trust_logos_cfg?.eyebrow || "Partnerships"}
+              </span>
+              <h2 className="mt-1.5 font-display text-sm font-medium tracking-wider text-muted-foreground uppercase">
+                {settings?.trust_logos_cfg?.title || "Trusted by Industry Leaders"}
+              </h2>
+            </div>
+            
+            <div className="relative w-full overflow-hidden">
+              {/* Left/Right fading gradients only for marquee scrolling mode */}
+              {settings.trust_logos.length > 2 && (
+                <>
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-card to-transparent z-10" />
+                  <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-card to-transparent z-10" />
+                </>
+              )}
+
+              {settings.trust_logos.length <= 2 ? (
+                // 1 or 2 logos: Static centered layout
+                <div className="flex justify-center gap-16 py-2 items-center flex-wrap">
+                  {settings.trust_logos.map((logo, idx) => {
+                    const logoImg = theme === "dark" && logo.image_dark ? logo.image_dark : (logo.image_light || logo.image);
+                    const isInverted = theme === "dark" && !logo.image_dark;
+                    const logoHeight = settings?.trust_logos_cfg?.height || 40;
+                    return (
+                      <div key={idx} className="flex flex-col items-center justify-center min-w-[140px] select-none">
+                        <div className="flex items-center justify-center" style={{ height: `${logoHeight + 8}px` }}>
+                          {logoImg && (
+                            <img
+                              src={resolveAssetUrl(logoImg)}
+                              alt={logo.name || "Partner Logo"}
+                              style={{ height: `${logoHeight}px` }}
+                              className={`max-w-[140px] w-auto object-contain opacity-60 hover:opacity-100 grayscale hover:grayscale-0 transition-all duration-300 ${isInverted ? "invert brightness-200" : ""}`}
+                              loading="lazy"
+                            />
+                          )}
+                        </div>
+                        {logo.name && (
+                          <span className="mt-2 text-[9px] font-medium tracking-widest text-muted-foreground/60 uppercase">
+                            {logo.name}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                // 3 or more logos: Infinite marquee scrolling
+                <div className="animate-marquee flex gap-16 py-2 items-center">
+                  {(settings.trust_logos.length < 6
+                    ? [...settings.trust_logos, ...settings.trust_logos, ...settings.trust_logos, ...settings.trust_logos]
+                    : [...settings.trust_logos, ...settings.trust_logos]
+                  ).map((logo, idx) => {
+                    const logoImg = theme === "dark" && logo.image_dark ? logo.image_dark : (logo.image_light || logo.image);
+                    const isInverted = theme === "dark" && !logo.image_dark;
+                    const logoHeight = settings?.trust_logos_cfg?.height || 40;
+                    return (
+                      <div key={idx} className="flex flex-col items-center justify-center min-w-[140px] select-none">
+                        <div className="flex items-center justify-center" style={{ height: `${logoHeight + 8}px` }}>
+                          {logoImg && (
+                            <img
+                              src={resolveAssetUrl(logoImg)}
+                              alt={logo.name || "Partner Logo"}
+                              style={{ height: `${logoHeight}px` }}
+                              className={`max-w-[140px] w-auto object-contain opacity-60 hover:opacity-100 grayscale hover:grayscale-0 transition-all duration-300 ${isInverted ? "invert brightness-200" : ""}`}
+                              loading="lazy"
+                            />
+                          )}
+                        </div>
+                        {logo.name && (
+                          <span className="mt-2 text-[9px] font-medium tracking-widest text-muted-foreground/60 uppercase">
+                            {logo.name}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Categories */}
       <AnnouncementBar config={settings?.announcements?.home} variant="section" testid="home-announcement" />
@@ -163,7 +389,7 @@ export default function Home() {
       </Section>
 
       {/* Why */}
-      <Section eyebrow="Why AurumTech" title="Built differently. Trusted globally.">
+      <Section eyebrow={`Why ${settings?.company?.name || "ORNETOPS"}`} title="Built differently. Trusted globally.">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {WHY.map(({ icon: Icon, t, d }) => (
             <Card key={t} className="border-border/60">
@@ -178,28 +404,69 @@ export default function Home() {
       </Section>
 
       {/* Featured products */}
-      <Section eyebrow="Flagships" title="Featured products">
-        <div className="grid gap-5 lg:grid-cols-3">
+      <Section eyebrow="Flagships" title="Featured products" sub="Explore our leading XRF analyzers and precious metal testing equipment.">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {featured.map((p) => (
-            <Link to={`/products/${p.slug}`} key={p.id} className="group" data-testid={`featured-${p.slug}`}>
-              <Card className="h-full overflow-hidden border-border/60 transition-all hover:border-primary/50 hover:-translate-y-1">
-                <div className="aspect-[4/3] overflow-hidden bg-secondary">
-                  <img src={resolveAssetUrl(p.image)} alt={p.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <Card key={p.id} className="group flex flex-col overflow-hidden border border-border bg-card transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5" data-testid={`featured-${p.slug}`}>
+              {/* Image Container */}
+              <div className="relative aspect-[16/10] overflow-hidden bg-muted">
+                <img
+                  src={resolveAssetUrl(p.image)}
+                  alt={p.name}
+                  loading="lazy"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+                <div className="absolute left-4 top-4">
+                  <Badge className="border border-primary/20 bg-background/90 text-primary backdrop-blur-sm text-[10px] font-semibold uppercase tracking-wider">
+                    {p.category?.replace(/-/g, " ")}
+                  </Badge>
                 </div>
-                <CardContent className="p-5">
-                  <div className="text-[10px] uppercase tracking-widest text-primary">{p.category?.replace(/-/g, " ")}</div>
-                  <div className="mt-1 text-lg font-medium tracking-tight">{p.name}</div>
-                  <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
-                  <div className="mt-4 inline-flex items-center gap-1 text-xs text-primary group-hover:gap-2 transition-all">View details <ArrowRight className="h-3 w-3" /></div>
-                </CardContent>
-              </Card>
-            </Link>
+              </div>
+
+              {/* Card Content */}
+              <CardContent className="flex flex-1 flex-col p-6">
+                <div className="flex-1">
+                  <h3 className="font-display text-xl font-medium tracking-tight text-foreground transition-colors group-hover:text-primary">
+                    {p.name}
+                  </h3>
+                  <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
+                    {p.tagline}
+                  </p>
+
+                  {/* Bullet features list */}
+                  {p.features && p.features.length > 0 && (
+                    <ul className="mt-4 space-y-2 border-t pt-4">
+                      {p.features.slice(0, 3).map((f, idx) => (
+                        <li key={idx} className="flex items-start text-xs text-muted-foreground">
+                          <span className="mr-2 mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Card CTAs */}
+                <div className="mt-6 grid grid-cols-2 gap-3 border-t pt-4">
+                  <Button asChild size="sm" className="rounded-sm" data-testid={`featured-view-${p.slug}`}>
+                    <Link to={`/products/${p.slug}`}>
+                      View Details
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline" className="rounded-sm" data-testid={`featured-quote-${p.slug}`}>
+                    <Link to={`/request-quote?product=${encodeURIComponent(p.name)}`}>
+                      Get Quote
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       </Section>
 
       {/* Testimonials */}
-      <Section eyebrow="Voices" title="Customers who trust AurumTech">
+      <Section eyebrow="Voices" title={`Customers who trust ${settings?.company?.name || "ORNETOPS"}`}>
         <div className="grid gap-4 lg:grid-cols-3">
           {testimonials.slice(0, 3).map((t) => (
             <Card key={t.id} className="border-border/60" data-testid={`testimonial-${t.id}`}>

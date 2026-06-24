@@ -15,12 +15,33 @@ export default function RequestDemo() {
   const [form, setForm] = useState({ name: "", email: "", phone: "", company: "", city: "", product_interest: initialProduct, preferred_date: "", message: "" });
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
 
-  const setF = (k, v) => setForm({ ...form, [k]: v });
+  const setF = (k, v) => {
+    setForm({ ...form, [k]: v });
+    if (errors[k]) setErrors({ ...errors, [k]: "" });
+  };
+
+  const validate = () => {
+    const e = {};
+    if (!form.name.trim()) e.name = "Name is required";
+    if (!form.email.trim()) {
+      e.email = "Email is required";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      e.email = "Enter a valid email address";
+    }
+    if (!form.phone.trim()) {
+      e.phone = "Phone is required";
+    } else if (!/^\+?[\d\s\-()]{7,15}$/.test(form.phone.trim())) {
+      e.phone = "Enter a valid phone number";
+    }
+    return e;
+  };
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.name) return toast.error("Name is required");
+    const errs = validate();
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
     setLoading(true);
     try {
       await api.post("/demo-requests/public", form);
@@ -55,11 +76,11 @@ export default function RequestDemo() {
                 <p className="mt-1 text-sm text-muted-foreground">We'll confirm a slot within 4 business hours.</p>
               </div>
             ) : (
-              <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
-                <F label="Name *" v={form.name} on={(v) => setF("name", v)} testid="rd-name" />
+              <form onSubmit={submit} noValidate className="grid gap-3 sm:grid-cols-2">
+                <F label="Name *" v={form.name} on={(v) => setF("name", v)} testid="rd-name" error={errors.name} />
                 <F label="Company" v={form.company} on={(v) => setF("company", v)} testid="rd-company" />
-                <F label="Email" v={form.email} on={(v) => setF("email", v)} type="email" testid="rd-email" />
-                <F label="Phone" v={form.phone} on={(v) => setF("phone", v)} testid="rd-phone" />
+                <F label="Email *" v={form.email} on={(v) => setF("email", v)} type="email" testid="rd-email" error={errors.email} />
+                <F label="Phone *" v={form.phone} on={(v) => setF("phone", v)} testid="rd-phone" error={errors.phone} />
                 <F label="City" v={form.city} on={(v) => setF("city", v)} testid="rd-city" />
                 <F label="Product" v={form.product_interest} on={(v) => setF("product_interest", v)} testid="rd-product" />
                 <F label="Preferred Date" v={form.preferred_date} on={(v) => setF("preferred_date", v)} type="date" testid="rd-date" />
@@ -79,11 +100,18 @@ export default function RequestDemo() {
   );
 }
 
-function F({ label, v, on, testid, type = "text" }) {
+function F({ label, v, on, testid, type = "text", error }) {
   return (
     <div>
       <Label className="text-xs uppercase tracking-widest">{label}</Label>
-      <Input type={type} className="mt-1.5" value={v} onChange={(e) => on(e.target.value)} data-testid={testid} />
+      <Input
+        type={type}
+        className={`mt-1.5 ${error ? "border-destructive focus-visible:ring-destructive" : ""}`}
+        value={v}
+        onChange={(e) => on(e.target.value)}
+        data-testid={testid}
+      />
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { usePublicSettings } from "@/context/SettingsContext";
 import { api } from "@/lib/api";
+import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
+import ExportButton from "@/components/admin/ExportButton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,12 +38,14 @@ export default function Leads() {
   const [filterSource, setFilterSource] = useState("all");
   const [selected, setSelected] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [leadToDelete, setLeadToDelete] = useState(null);
 
   const load = async () => {
     const { data } = await api.get("/leads");
     setLeads(data);
   };
-  useEffect(() => { load(); }, []);
+  const { dataVersion } = usePublicSettings();
+  useEffect(() => { load(); }, [dataVersion]);
 
   const filtered = useMemo(() => {
     return leads.filter((l) => {
@@ -75,7 +80,6 @@ export default function Leads() {
   };
 
   const remove = async (lead) => {
-    if (!window.confirm("Delete this lead?")) return;
     await api.delete(`/leads/${lead.id}`);
     toast.success("Lead deleted");
     setSelected(null);
@@ -117,6 +121,7 @@ export default function Leads() {
             </SelectContent>
           </Select>
           <NewLeadDialog open={createOpen} setOpen={setCreateOpen} onCreated={load} />
+          <ExportButton resource="leads" />
         </div>
       </div>
 
@@ -217,7 +222,20 @@ export default function Leads() {
         onClose={() => setSelected(null)}
         onStatusChange={setStatus}
         onAddNote={addNote}
-        onDelete={remove}
+        onDelete={setLeadToDelete}
+      />
+
+      <DeleteConfirmDialog
+        open={!!leadToDelete}
+        onOpenChange={(o) => !o && setLeadToDelete(null)}
+        onConfirm={async () => {
+          if (leadToDelete) {
+            await remove(leadToDelete);
+            setLeadToDelete(null);
+          }
+        }}
+        title="Delete this lead?"
+        description="Are you sure you want to permanently delete this lead? All associated follow-up notes and contact history will be removed."
       />
     </div>
   );

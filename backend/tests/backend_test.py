@@ -8,9 +8,9 @@ import requests
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://precision-metals-6.preview.emergentagent.com").rstrip("/")
 API = f"{BASE}/api"
 
-ADMIN = ("admin@aurumtech.com", "Admin@123")
-SALES = ("sales@aurumtech.com", "Sales@123")
-CONTENT = ("content@aurumtech.com", "Content@123")
+ADMIN = ("admin@ornetops.com", "Admin@123")
+SALES = ("sales@ornetops.com", "Sales@123")
+CONTENT = ("content@ornetops.com", "Content@123")
 
 
 def _login(email, password):
@@ -206,22 +206,40 @@ class TestSettings:
         s, _ = _login(*ADMIN)
         r = s.put(f"{API}/settings", json={
             "company": {"name": "AurumTech"},
-            "email": {"host": "smtp.x.com", "password": "supersecret", "api_key": "KEY123"}
+            "email": {"host": "smtp.x.com", "password": "supersecret", "api_key": "KEY123"},
+            "whatsapp_cfg": {"twilio_sid": "SID123", "twilio_token": "TOKEN123", "enabled": True}
         }, timeout=20)
         assert r.status_code == 200
-        r2 = requests.get(f"{API}/settings", timeout=20)
+
+        # Unauthenticated request to /settings must return 401
+        r_unauth = requests.get(f"{API}/settings", timeout=20)
+        assert r_unauth.status_code == 401
+
+        # Authenticated request to /settings must succeed
+        r2 = s.get(f"{API}/settings", timeout=20)
         assert r2.status_code == 200
         body = r2.json()
         assert body["email"]["password"] == "********"
         assert body["email"]["api_key"] == "********"
+
+        # Public settings endpoint must succeed and hide all SMTP/Twilio credentials
+        r_pub = requests.get(f"{API}/settings/public", timeout=20)
+        assert r_pub.status_code == 200
+        body_pub = r_pub.json()
+        assert "email" not in body_pub
+        assert "twilio_sid" not in body_pub.get("whatsapp_cfg", {})
+        assert "twilio_token" not in body_pub.get("whatsapp_cfg", {})
+        assert body_pub.get("whatsapp_cfg", {}).get("enabled") is True
+
         # Save with masked => no overwrite
         s.put(f"{API}/settings", json={
             "company": {"name": "AurumTech 2"},
-            "email": {"host": "smtp.x.com", "password": "********", "api_key": "********"}
+            "email": {"host": "smtp.x.com", "password": "********", "api_key": "********"},
+            "whatsapp_cfg": {"twilio_sid": "SID123", "twilio_token": "********", "enabled": True}
         }, timeout=20)
-        # Re-login as same admin (no api to fetch secret), but verify by changing email config and ensuring secret preserved by setting non-masked then masked again:
-        # We can't directly read secret; just confirm masking still appears
-        body2 = requests.get(f"{API}/settings", timeout=20).json()
+        
+        # Re-login as same admin, verify secret preserved
+        body2 = s.get(f"{API}/settings", timeout=20).json()
         assert body2["email"]["password"] == "********"
         assert body2["company"]["name"] == "AurumTech 2"
 

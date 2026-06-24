@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePublicSettings } from "@/context/SettingsContext";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,9 +41,11 @@ export default function Events() {
   const [open, setOpen] = useState(null); // { type:'image'|'video', url }
   const [lightboxIdx, setLightboxIdx] = useState(0);
 
+  const { dataVersion } = usePublicSettings();
+
   useEffect(() => {
     api.get("/events").then((r) => setEvents(r.data || []));
-  }, []);
+  }, [dataVersion]);
 
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = events.filter((e) => (e.published !== false) && (!e.date || e.date >= today));
@@ -112,7 +115,7 @@ function EventCard({ ev, onOpenImage, onOpenVideo }) {
           {ev.location && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3 w-3" /> {ev.location}</span>}
         </div>
         <div className="mt-3 text-lg font-medium tracking-tight">{ev.title}</div>
-        {ev.description && <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{ev.description}</p>}
+        {ev.description && <p className="mt-1 text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{ev.description}</p>}
 
         {(images.length > 1 || videos.length > 0) && (
           <div className="mt-5 grid grid-cols-3 gap-2">

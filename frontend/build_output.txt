@@ -1,0 +1,41 @@
+
+> frontend@0.1.0 build
+> craco build
+
+Creating an optimized production build...
+Compiled with warnings.
+
+Failed to parse source map from 'E:\Gold_XRF_SITE\Code_Workspace\XRF-Website-Workspace\frontend\node_modules\@mediapipe\tasks-vision\vision_bundle_mjs.js.map' file: Error: ENOENT: no such file or directory, open 'E:\Gold_XRF_SITE\Code_Workspace\XRF-Website-Workspace\frontend\node_modules\@mediapipe\tasks-vision\vision_bundle_mjs.js.map'
+
+[eslint] 
+src\pages\admin\CrudPage.jsx
+  Line 44:63:  React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\admin\RequestList.jsx
+  Line 44:32:  React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+File sizes after gzip:
+
+  587.91 kB  build\static\js\main.e59d8edc.js
+  12.94 kB   build\static\css\main.0a648558.css
+
+The bundle size is significantly larger than recommended.
+Consider reducing it with code splitting: https://goo.gl/9VhYWB
+You can also analyze the project dependencies: https://goo.gl/LeUzfb
+
+The project was built assuming it is hosted at /.
+You can control this with the homepage field in your package.json.
+
+The build folder is ready to be deployed.
+You may serve it with a static server:
+
+  yarn global add serve
+  serve -s build
+
+Find out more about deployment here:
+
+  https://cra.link/deployment
+

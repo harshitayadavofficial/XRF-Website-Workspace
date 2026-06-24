@@ -8,6 +8,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 
 import PublicLayout from "@/pages/public/PublicLayout";
 import Home from "@/pages/public/Home";
+import About from "@/pages/public/About";
 import ProductsList from "@/pages/public/ProductsList";
 import ProductDetail from "@/pages/public/ProductDetail";
 import Industries from "@/pages/public/Industries";
@@ -29,6 +30,7 @@ import Settings from "@/pages/admin/Settings";
 import Audit from "@/pages/admin/Audit";
 import RequestList from "@/pages/admin/RequestList";
 import CrudPage from "@/pages/admin/CrudPage";
+import SystemStats from "@/pages/admin/SystemStats";
 
 function App() {
   return (
@@ -40,6 +42,7 @@ function App() {
             {/* Public */}
             <Route element={<PublicLayout />}>
               <Route path="/" element={<Home />} />
+              <Route path="/about" element={<About />} />
               <Route path="/products" element={<ProductsList />} />
               <Route path="/products/:slug" element={<ProductDetail />} />
               <Route path="/industries" element={<Industries />} />
@@ -154,8 +157,8 @@ function App() {
                   { key: "title", label: "Title *", type: "text" },
                   { key: "type", label: "Type (Exhibition / Webinar / Trade Show / Launch)", type: "text" },
                   { key: "location", label: "Location", type: "text" },
-                  { key: "date", label: "Date (YYYY-MM-DD)", type: "text" },
-                  { key: "end_date", label: "End Date (YYYY-MM-DD, optional)", type: "text" },
+                  { key: "date", label: "Start Date", type: "date" },
+                  { key: "end_date", label: "End Date (optional)", type: "date" },
                   { key: "description", label: "Description", type: "textarea" },
                   { key: "image", label: "Cover Image", type: "upload", accept: "image" },
                   { key: "images", label: "Gallery Images", type: "upload_multi", accept: "image" },
@@ -183,6 +186,7 @@ function App() {
 
             <Route path="/admin/users" element={<ProtectedRoute roles={["super_admin", "admin"]}><AdminLayout><Users /></AdminLayout></ProtectedRoute>} />
             <Route path="/admin/audit" element={<ProtectedRoute roles={["super_admin", "admin"]}><AdminLayout><Audit /></AdminLayout></ProtectedRoute>} />
+            <Route path="/admin/system-stats" element={<ProtectedRoute roles={["super_admin", "admin"]}><AdminLayout><SystemStats /></AdminLayout></ProtectedRoute>} />
             <Route path="/admin/settings" element={<ProtectedRoute roles={["super_admin", "admin"]}><AdminLayout><Settings /></AdminLayout></ProtectedRoute>} />
 
             <Route path="*" element={<Navigate to="/" replace />} />

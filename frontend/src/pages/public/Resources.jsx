@@ -1,18 +1,26 @@
 import { useEffect, useState } from "react";
+import { usePublicSettings } from "@/context/SettingsContext";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Newspaper, FileText, Download } from "lucide-react";
+import { Newspaper, FileText, Download, FileX } from "lucide-react";
 import { resolveAssetUrl } from "@/components/FileUpload";
 
 export default function Resources() {
   const [blogs, setBlogs] = useState([]);
   const [cases, setCases] = useState([]);
+  const [products, setProducts] = useState([]);
+
+  const { dataVersion } = usePublicSettings();
+
   useEffect(() => {
-    Promise.all([api.get("/blogs"), api.get("/case_studies")]).then(([b, c]) => {
+    Promise.all([api.get("/blogs"), api.get("/case_studies"), api.get("/products")]).then(([b, c, p]) => {
       setBlogs(b.data); setCases(c.data);
+      // Only products that have a brochure uploaded
+      setProducts(p.data.filter((x) => x.brochure_url));
     });
-  }, []);
+  }, [dataVersion]);
+
   return (
     <div className="border-b" data-testid="resources-page">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
@@ -40,15 +48,34 @@ export default function Resources() {
           </TabsContent>
           <TabsContent value="downloads">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {["Aurum XRF Pro 9000 Brochure", "GoldScan X1 Datasheet", "BIS Hallmarking White Paper", "Calibration Standards Catalogue"].map((d) => (
-                <Card key={d} className="border-border/60"><CardContent className="p-5 flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">PDF · 2.4 MB</div>
-                    <div className="mt-1 text-sm font-medium">{d}</div>
-                  </div>
-                  <Download className="h-5 w-5 text-primary" />
-                </CardContent></Card>
+              {products.map((p) => (
+                <a
+                  key={p.id}
+                  href={resolveAssetUrl(p.brochure_url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                  className="group block"
+                  data-testid={`brochure-${p.slug}`}
+                >
+                  <Card className="border-border/60 transition-all hover:border-primary/50 hover:shadow-md">
+                    <CardContent className="p-5 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">PDF · Brochure</div>
+                        <div className="mt-1 text-sm font-medium group-hover:text-primary transition-colors">{p.name}</div>
+                        {p.tagline && <div className="mt-0.5 text-xs text-muted-foreground truncate">{p.tagline}</div>}
+                      </div>
+                      <Download className="h-5 w-5 text-primary shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                    </CardContent>
+                  </Card>
+                </a>
               ))}
+              {products.length === 0 && (
+                <div className="col-span-full flex flex-col items-center gap-3 rounded-md border border-dashed p-14 text-center">
+                  <FileX className="h-8 w-8 text-muted-foreground/40" />
+                  <div className="text-sm text-muted-foreground">No brochures available yet.<br />Upload brochures from Admin → Products → Edit a product.</div>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

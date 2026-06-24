@@ -12,10 +12,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import FileUpload from "@/components/FileUpload";
+import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
 
 const EMPTY = {
-  name: "", slug: "", category: "", tagline: "", summary: "", image: "",
-  model_3d: "", price_from: 0, currency: "INR", featured: false, published: true,
+  name: "", slug: "", category: "", tagline: "", summary: "", image: "", images: [],
+  model_3d: "", brochure_url: "", price_from: 0, currency: "INR", featured: false, published: true,
   features: [], specs: [],
 };
 
@@ -23,6 +24,7 @@ export default function Products() {
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const load = async () => {
     const [{ data: p }, { data: c }] = await Promise.all([api.get("/products"), api.get("/categories")]);
@@ -31,7 +33,6 @@ export default function Products() {
   useEffect(() => { load(); }, []);
 
   const remove = async (id) => {
-    if (!window.confirm("Delete this product?")) return;
     await api.delete(`/products/${id}`);
     toast.success("Deleted");
     load();
@@ -73,7 +74,7 @@ export default function Products() {
                   <TableCell>{p.published ? "Live" : "Draft"}</TableCell>
                   <TableCell className="text-right">
                     <Button size="icon" variant="ghost" onClick={() => setEditing(p)} data-testid={`edit-product-${p.id}`}><Pencil className="h-4 w-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => remove(p.id)} data-testid={`delete-product-${p.id}`}><Trash2 className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => setDeleteId(p.id)} data-testid={`delete-product-${p.id}`}><Trash2 className="h-4 w-4" /></Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -86,13 +87,36 @@ export default function Products() {
       </Card>
 
       <ProductEditDialog item={editing} cats={cats} onClose={() => setEditing(null)} onSaved={load} />
+
+      <DeleteConfirmDialog
+        open={!!deleteId}
+        onOpenChange={(o) => !o && setDeleteId(null)}
+        onConfirm={async () => {
+          if (deleteId) {
+            await remove(deleteId);
+            setDeleteId(null);
+          }
+        }}
+        title="Delete this product?"
+        description="Are you sure you want to permanently delete this product? All related descriptions, features, specifications, and 3D models will be deleted."
+      />
     </div>
   );
 }
 
 function ProductEditDialog({ item, cats, onClose, onSaved }) {
-  const [form, setForm] = useState(item || EMPTY);
-  useEffect(() => { setForm(item || EMPTY); }, [item]);
+  const [form, setForm] = useState(EMPTY);
+  useEffect(() => {
+    if (item) {
+      setForm({
+        ...EMPTY,
+        ...item,
+        images: Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []),
+      });
+    } else {
+      setForm(EMPTY);
+    }
+  }, [item]);
   if (!item) return null;
 
   const save = async () => {
@@ -128,9 +152,15 @@ function ProductEditDialog({ item, cats, onClose, onSaved }) {
           </div>
           <TextField label="Tagline" value={form.tagline} onChange={(v) => setF("tagline", v)} testid="pe-tagline" />
           <div className="sm:col-span-2">
-            <Label className="text-xs uppercase tracking-widest">Product Image</Label>
+            <Label className="text-xs uppercase tracking-widest">Product Images</Label>
             <div className="mt-1.5">
-              <FileUpload value={form.image || ""} onChange={(v) => setF("image", v)} mode="single" accept="image" testid="pe-image" />
+              <FileUpload
+                value={form.images || []}
+                onChange={(urls) => setForm({ ...form, images: urls, image: urls[0] || "" })}
+                mode="multiple"
+                accept="image"
+                testid="pe-images"
+              />
             </div>
           </div>
           <div className="sm:col-span-2">
@@ -142,6 +172,12 @@ function ProductEditDialog({ item, cats, onClose, onSaved }) {
           <div className="sm:col-span-2">
             <Label className="text-xs uppercase tracking-widest">Summary</Label>
             <Textarea className="mt-1.5" value={form.summary} onChange={(e) => setF("summary", e.target.value)} data-testid="pe-summary" />
+          </div>
+          <div className="sm:col-span-2">
+            <Label className="text-xs uppercase tracking-widest">Brochure / Datasheet (PDF) — optional</Label>
+            <div className="mt-1.5">
+              <FileUpload value={form.brochure_url || ""} onChange={(v) => setF("brochure_url", v)} mode="single" accept="pdf" testid="pe-brochure" />
+            </div>
           </div>
           <div className="flex items-center gap-2"><Switch checked={!!form.featured} onCheckedChange={(v) => setF("featured", v)} data-testid="pe-featured" /> <span className="text-sm">Featured</span></div>
           <div className="flex items-center gap-2"><Switch checked={form.published !== false} onCheckedChange={(v) => setF("published", v)} data-testid="pe-published" /> <span className="text-sm">Published</span></div>
