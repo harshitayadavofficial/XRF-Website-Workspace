@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePublicSettings } from "@/context/SettingsContext";
+import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
 import ExportButton from "@/components/admin/ExportButton";
@@ -299,6 +300,7 @@ function Field({ label, value, onChange, testid }) {
 }
 
 function LeadDetailDialog({ lead, onClose, onStatusChange, onAddNote, onDelete }) {
+  const { user } = useAuth();
   const [note, setNote] = useState("");
   useEffect(() => { setNote(""); }, [lead?.id]);
   if (!lead) return null;
@@ -318,6 +320,23 @@ function LeadDetailDialog({ lead, onClose, onStatusChange, onAddNote, onDelete }
           <Info label="Phone" value={lead.phone} icon={Phone} />
           <Info label="City" value={lead.city} />
           <Info label="Product" value={lead.product_interest} />
+          {user?.role === "supreme_user" && (
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">IP & Location</div>
+              <div className="mt-0.5 flex items-center gap-1.5 text-sm">
+                {lead.ip ? (
+                  <>
+                    <span>{lead.ip}</span>
+                    <a href={`https://ipapi.co/${lead.ip}/`} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline ml-1">
+                      Lookup Location
+                    </a>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground italic">Not recorded</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         {lead.message && (
           <div className="rounded-md border bg-secondary/40 p-3 text-sm">{lead.message}</div>

